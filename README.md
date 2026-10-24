@@ -4,16 +4,16 @@ A desk status light for AI coding agents: [Claude Code](https://claude.com/claud
 
 | Screen | Meaning |
 |---|---|
-| Blue **WORKING** | The agent is busy |
-| Amber **NEEDS YOU** (blinking) | Permission prompt or idle input wait; shows the message |
-| Green **YOUR TURN** | The agent finished its reply |
-| Black idle screen | No sessions; shows the board's IP |
+| Blue **WORKING**, a bar sweeping back and forth | The agent is busy |
+| Amber **NEEDS YOU**, pulsing border | Permission prompt or idle input wait; shows the message |
+| Green **YOUR TURN**, a band of light passing over | The agent finished its reply (still, in grey, once seen) |
+| Black idle screen, slowly drifting | No sessions; shows the board's IP |
 
 Cursor and Codex sessions are labelled with the agent name, e.g. `aice (cursor)`.
 
 The screen rotates through the sessions, most urgent first (needs you > working > your turn), and keeps the urgent ones up longer: 15 seconds for *needs you*, 8 for *working*, 4 for *your turn* (2 once seen). Idle sessions are only shown when nothing else is going on. When a session finishes or starts waiting on you, it is shown straight away (8 seconds for *your turn*) before the rotation carries on. A bottom row counts sessions per state. Working sessions go stale after 30 minutes; finished ones clear after 2 hours.
 
-**Buttons:** BOOT marks every *your turn* session as seen (grey). The other button cycles which session is shown and holds it for 30 seconds before the rotation resumes.
+**Buttons:** BOOT marks every *your turn* session as seen (grey); one left unseen turns grey by itself after 15 minutes. The other button cycles which session is shown and holds it for 30 seconds before the rotation resumes.
 
 ## Hardware
 

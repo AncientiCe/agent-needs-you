@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Animations for every state.** *Needs you* replaces the hard blink with a breathing border and a pulsing background; *working* shows a bar sweeping back and forth; an unseen *your turn* gets a soft band of light passing over every few seconds (a seen one stays still); the idle screen drifts slowly, which also protects the AMOLED from burn-in.
+
+### Changed
+
+- **Finished sessions fade on their own.** A *your turn* session that nobody marks as seen turns grey after 15 minutes, as if BOOT had been pressed, so an old result no longer looks as urgent as a fresh one or takes screen time from working sessions. It still clears after 2 hours.
+
 ## [0.2.0] - 2026-10-24
 
 ### Changed

@@ -34,6 +34,7 @@
 #define HOSTNAME "claude-light"
 #define MAX_SESSIONS 8
 #define WORKING_STALE_MS (30UL * 60 * 1000)
+#define DONE_FADE_MS (15UL * 60 * 1000)
 #define DONE_EXPIRE_MS (2UL * 60 * 60 * 1000)
 #define IDLE_EXPIRE_MS (2UL * 60 * 60 * 1000)
 #define NEEDS_EXPIRE_MS (8UL * 60 * 60 * 1000)
@@ -46,6 +47,9 @@
 #define DWELL_DONE_MS (4UL * 1000)
 #define DWELL_ACKED_MS (2UL * 1000)
 #define DWELL_IDLE_MS (3UL * 1000)
+// Animation frame intervals; 0 = static, redrawn on change only.
+#define FRAME_MS 33
+#define FRAME_IDLE_MS 50
 
 // ---- Colours (RGB565) ----
 #define C_BLACK 0x0000
@@ -171,6 +175,7 @@ static void expireSessions() {
     uint32_t age = now - s.since;
     if (s.st == ST_WORKING && age > WORKING_STALE_MS) { s.st = ST_IDLE; s.since = now; dirty = true; }
     else if (s.st == ST_DONE && age > DONE_EXPIRE_MS) { s.used = false; dirty = true; }
+    else if (s.st == ST_DONE && !s.acked && age > DONE_FADE_MS) { s.acked = true; dirty = true; }
     else if (s.st == ST_IDLE && age > IDLE_EXPIRE_MS) { s.used = false; dirty = true; }
     else if (s.st == ST_NEEDS && age > NEEDS_EXPIRE_MS) { s.used = false; dirty = true; }
   }
@@ -230,12 +235,55 @@ static int currentFocus() {
 // ---------------------------------------------------------------- display
 
 // Built-in 6x8 font scaled by `size`.
-static void centerText(const char *t, int y, uint8_t size, uint16_t col) {
+static void centerText(const char *t, int y, uint8_t size, uint16_t col, int dx = 0) {
   gfx->setTextSize(size);
   gfx->setTextColor(col);
   int w = strlen(t) * 6 * size;
-  gfx->setCursor((W - w) / 2, y);
+  gfx->setCursor((W - w) / 2 + dx, y);
   gfx->print(t);
+}
+
+// Blend two RGB565 colours, t = 0 gives a, t = 1 gives b.
+static uint16_t mix565(uint16_t a, uint16_t b, float t) {
+  int r = (a >> 11) + (int)(((b >> 11) - (a >> 11)) * t);
+  int g = ((a >> 5) & 63) + (int)((((b >> 5) & 63) - ((a >> 5) & 63)) * t);
+  int bl = (a & 31) + (int)(((b & 31) - (a & 31)) * t);
+  return (r << 11) | (g << 5) | bl;
+}
+
+// 0..1..0 sine wave with the given period.
+static float wave(uint32_t period) {
+  return 0.5f - 0.5f * cosf(2 * PI * (millis() % period) / period);
+}
+
+// Needs you: a thick border that breathes and a background that pulses.
+static void animNeeds(uint16_t *bg) {
+  float p = wave(1200);
+  *bg = mix565(C_NEEDS, C_BLACK, 0.35f * p);
+  gfx->fillScreen(*bg);
+  int t = 2 + (int)(10 * p);
+  for (int i = 0; i < t; i++) gfx->drawRect(i, i, W - 2 * i, H - 40 - 2 * i, C_BLACK);
+}
+
+// Working: a bright segment sweeping back and forth along a track.
+static void animWorking() {
+  const int x0 = 48, x1 = W - 48, y = 150, h = 6, seg = 110;
+  gfx->fillRoundRect(x0, y, x1 - x0, h, 3, mix565(C_WORKING, C_BLACK, 0.5f));
+  int x = x0 + (int)((x1 - x0 - seg) * wave(1600));
+  gfx->fillRoundRect(x, y, seg, h, 3, mix565(C_WORKING, C_WHITE, 0.7f));
+}
+
+// Your turn: a soft band of light passes over the screen every few seconds.
+static void animDone() {
+  const uint32_t period = 3500, pass = 900;
+  uint32_t t = millis() % period;
+  if (t >= pass) return;
+  const int bw = 90;
+  int cx = -bw + (int)((W + 2 * bw) * t / pass);
+  for (int i = 0; i < 3; i++) {
+    int w = bw - i * 30;
+    gfx->fillRect(cx - w / 2, 0, w, H - 40, mix565(C_DONE, C_WHITE, 0.08f + 0.08f * i));
+  }
 }
 
 static void wrapText(const char *t, int y, int lines, uint8_t size, uint16_t col) {
@@ -273,7 +321,6 @@ static void draw() {
   if (testPattern && millis() - testPattern < 20000) { drawTestPattern(); return; }
   testPattern = 0;
   int f = currentFocus();
-  bool blinkOn = (millis() / 500) % 2;
   int counts[4] = {0, 0, 0, 0};
   for (auto &s : sessions)
     if (s.used) counts[s.st]++;
@@ -282,14 +329,19 @@ static void draw() {
   const char *word = "IDLE";
 
   if (f < 0) {
+    // Nothing going on: the text drifts slowly, which also spares the
+    // AMOLED from burn-in.
+    uint32_t now = millis();
+    int dx = (int)(90 * sinf(2 * PI * (now % 23000) / 23000));
+    int dy = (int)(30 * sinf(2 * PI * (now % 31000) / 31000));
     gfx->fillScreen(C_BLACK);
-    centerText("Claude", 50, 6, C_DIM);
+    centerText("Claude", 50 + dy, 6, C_DIM, dx);
     if (WiFi.status() == WL_CONNECTED) {
-      centerText("no sessions", 130, 3, C_DIM);
-      centerText(WiFi.localIP().toString().c_str(), 190, 2, C_DIM);
+      centerText("no sessions", 130 + dy, 3, C_DIM, dx);
+      centerText(WiFi.localIP().toString().c_str(), 190 + dy, 2, C_DIM, dx);
     } else {
-      centerText(HAVE_WIFI ? "wifi..." : "no wifi config", 130, 3, C_DIM);
-      centerText("serial ok", 190, 2, C_DIM);
+      centerText(HAVE_WIFI ? "wifi..." : "no wifi config", 130 + dy, 3, C_DIM, dx);
+      centerText("serial ok", 190 + dy, 2, C_DIM, dx);
     }
     gfx->flush();
     return;
@@ -303,9 +355,10 @@ static void draw() {
     default: break;
   }
 
-  gfx->fillScreen(bg);
-  if (s.st == ST_NEEDS && blinkOn)
-    for (int i = 0; i < 8; i++) gfx->drawRect(i, i, W - 2 * i, H - 40 - 2 * i, C_BLACK);
+  if (s.st == ST_NEEDS) animNeeds(&bg);
+  else gfx->fillScreen(bg);
+  if (s.st == ST_WORKING) animWorking();
+  if (s.st == ST_DONE && !s.acked) animDone();
 
   centerText(word, 20, 7, fg);
   char label[40];
@@ -479,6 +532,14 @@ static void wifiLoop() {
 
 // ---------------------------------------------------------------- main
 
+static uint32_t frameInterval(int f) {
+  if (testPattern) return 0;
+  if (f < 0) return FRAME_IDLE_MS;
+  const Session &s = sessions[f];
+  if (s.st == ST_NEEDS || s.st == ST_WORKING || (s.st == ST_DONE && !s.acked)) return FRAME_MS;
+  return 0;
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_BTN_L, INPUT_PULLUP);
@@ -500,11 +561,9 @@ void loop() {
   handleSerial();
   handleButtons();
   if (millis() - lastExpire > 5000) { lastExpire = millis(); expireSessions(); }
-  // Redraw on change, and every 250ms while something needs blinking.
-  bool blinking = false;
-  int f = currentFocus();
-  if (f >= 0 && sessions[f].st == ST_NEEDS) blinking = true;
-  if (dirty || (blinking && millis() - lastDraw > 250) || millis() - lastDraw > 5000) {
+  // Redraw on change, and every frame while the shown screen is animated.
+  uint32_t frame = frameInterval(currentFocus());
+  if (dirty || (frame && millis() - lastDraw > frame) || millis() - lastDraw > 5000) {
     dirty = false;
     lastDraw = millis();
     draw();
