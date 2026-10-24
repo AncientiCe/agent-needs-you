@@ -356,10 +356,10 @@ static void drawCounts(int x, int y) {
     {ST_NEEDS, C_NEEDS}, {ST_WORKING, C_WORKING}, {ST_DONE, C_DONE}, {ST_IDLE, C_IDLE}};
   for (int i = 0; i < 4; i++) {
     int n = counts[chips[i].st], cx = x + i * 56;
-    gfx->fillCircle(cx + 6, y - 6, 6, n ? chips[i].c : mix565(chips[i].c, C_BLACK, 0.7f));
+    gfx->fillCircle(cx + 7, y - 7, 7, n ? chips[i].c : mix565(chips[i].c, C_BLACK, 0.7f));
     char num[4];
     snprintf(num, sizeof(num), "%d", n);
-    text(u8g2_font_fub11_tr, num, cx + 18, y, n ? C_WHITE : C_DIM);
+    text(u8g2_font_fub14_tr, num, cx + 19, y, n ? C_WHITE : C_DIM);
   }
 }
 
@@ -376,13 +376,13 @@ static void draw() {
     int dx = 12 * sinf(2 * PI * (now % 23000) / 23000);
     int dy = 8 * sinf(2 * PI * (now % 31000) / 31000);
     drawFace(gfx, MOOD_SLEEPY, FACE_X + dx, FACE_Y + dy, C_IDLE, 0);
-    text(u8g2_font_fub20_tr, "Sleeping", PANEL_X + dx, 70 + dy, C_IDLE);
+    text(u8g2_font_fub25_tr, "Sleeping", PANEL_X + dx, 72 + dy, C_IDLE);
     if (WiFi.status() == WL_CONNECTED) {
-      text(u8g2_font_fur14_tr, "no sessions", PANEL_X + dx, 104 + dy, C_DIM);
-      text(u8g2_font_fur11_tr, WiFi.localIP().toString().c_str(), PANEL_X + dx, 180 + dy, C_DIM);
+      text(u8g2_font_fur17_tr, "no sessions", PANEL_X + dx, 110 + dy, C_DIM);
+      text(u8g2_font_fur14_tr, WiFi.localIP().toString().c_str(), PANEL_X + dx, 184 + dy, C_DIM);
     } else {
-      text(u8g2_font_fur14_tr, HAVE_WIFI ? "wifi..." : "no wifi config", PANEL_X + dx, 104 + dy, C_DIM);
-      text(u8g2_font_fur11_tr, "serial ok", PANEL_X + dx, 180 + dy, C_DIM);
+      text(u8g2_font_fur17_tr, HAVE_WIFI ? "wifi..." : "no wifi config", PANEL_X + dx, 110 + dy, C_DIM);
+      text(u8g2_font_fur14_tr, "serial ok", PANEL_X + dx, 184 + dy, C_DIM);
     }
     gfx->flush();
     return;
@@ -395,23 +395,23 @@ static void draw() {
   drawFace(gfx, moodOf(s), FACE_X, FACE_Y, col, pop);
 
   static const char *titles[] = {"Idle", "Working", "Your turn", "Needs you"};
-  text(u8g2_font_fub20_tr, titles[s.st], PANEL_X, 46, col);
+  text(u8g2_font_fub25_tr, titles[s.st], PANEL_X, 44, col);
 
   char label[40];
   if (s.agent[0]) snprintf(label, sizeof(label), "%s (%s)", s.project, s.agent);
   else copyStr(label, sizeof(label), s.project);
-  gfx->setFont(u8g2_font_fur14_tr);
+  gfx->setFont(u8g2_font_fur17_tr);
   gfx->setTextColor(C_WHITE);
   fitText(label, PANEL_X, 80, PANEL_W);
 
   char age[32];
   ageText(age, sizeof(age), s);
-  text(u8g2_font_fur11_tr, age, PANEL_X, 104, C_DIM);
+  text(u8g2_font_fur14_tr, age, PANEL_X, 106, C_DIM);
 
   if (s.st == ST_NEEDS && s.msg[0]) {
-    gfx->setFont(u8g2_font_fur11_tr);
+    gfx->setFont(u8g2_font_fur14_tr);
     gfx->setTextColor(mix565(C_NEEDS, C_WHITE, 0.6f));
-    wrapText(s.msg, PANEL_X, 134, PANEL_W, 19, 3);
+    wrapText(s.msg, PANEL_X, 136, PANEL_W, 22, 3);
   }
 
   drawCounts(PANEL_X, 224);
