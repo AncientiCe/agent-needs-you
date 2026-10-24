@@ -34,12 +34,19 @@ After boot the board prints `wifi up: http://<ip>/` over serial and shows the IP
 
 ## Agent hooks
 
-Install hooks for every agent found on the machine. Works on Windows, macOS and Linux; needs Python 3.8+, standard library only.
+Install hooks for every agent found on the machine. Works on Windows, macOS and Linux; needs Python 3.8+, standard library only. No clone needed:
 
 ```bash
-python hooks/install.py --ip <device-ip>     # Windows
-python3 hooks/install.py --ip <device-ip>    # macOS / Linux
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/install.py | python3 - --ip <device-ip>
 ```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/install.py | python - --ip <device-ip>
+```
+
+From a clone, run `python hooks/install.py --ip <device-ip>` instead (`python3` on macOS/Linux). Options go after the `-` in the one-liners too, e.g. `... | python3 - --uninstall`.
 
 Hooks call the Python that ran the installer (or the system Python, if run from a virtualenv), so install with the interpreter you want the hooks to use.
 

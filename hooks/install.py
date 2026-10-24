@@ -5,6 +5,11 @@
     python hooks/install.py --uninstall
     python hooks/install.py --ip 192.168.2.141 --dry-run  # show, change nothing
 
+Without a clone (relay.py is then downloaded from GitHub):
+
+    curl -fsSL https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/install.py | python3 - --ip 192.168.2.141
+    irm https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/install.py | python - --ip 192.168.2.141
+
 Copies relay.py to ~/.claude-light/ and merges one hook per event into each
 agent's user config. Existing hooks are left alone, earlier Claude Needs You
 hooks are replaced, and every changed file is backed up first.
@@ -20,8 +25,8 @@ import time
 import urllib.request
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
 MARKER = ".claude-light/relay.py"
+RELAY_URL = "https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/relay.py"
 
 # event -> matcher (None = no matcher field)
 CLAUDE_EVENTS = {
@@ -150,6 +155,22 @@ def apply(path, updater, command, dry_run):
     return "updated"
 
 
+def relay_source():
+    """relay.py from next to this script, or from GitHub when run without a clone."""
+    here = globals().get("__file__", "")
+    local = Path(here).resolve().parent / "relay.py" if here and here != "<stdin>" else None
+    if local and local.exists():
+        return local.read_bytes()
+    try:
+        with urllib.request.urlopen(RELAY_URL, timeout=15) as r:
+            src = r.read()
+    except Exception as e:
+        raise SystemExit(f"couldn't download {RELAY_URL} ({e}); nothing changed")
+    if b"def normalise" not in src:
+        raise SystemExit(f"download from {RELAY_URL} doesn't look like relay.py; nothing changed")
+    return src
+
+
 def check_board(url):
     status_url = url.rsplit("/hook", 1)[0] + "/"
     try:
@@ -188,9 +209,11 @@ def main():
     if args.uninstall:
         if relay.exists() and not args.dry_run:
             relay.unlink()
-    elif not args.dry_run:
-        relay.parent.mkdir(exist_ok=True)
-        shutil.copy2(HERE / "relay.py", relay)
+    else:
+        src = relay_source()  # fetch before touching any config
+        if not args.dry_run:
+            relay.parent.mkdir(exist_ok=True)
+            relay.write_bytes(src)
 
     for name in names:
         dirname, filename, updater = AGENTS[name]
