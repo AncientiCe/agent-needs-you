@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-24
+
 ### Added
 
 - **The screen has eyes.** Each state gets its own animated face: *working* is focused (narrowed eyes reading back and forth, the odd bead of sweat), *needs you* is curious (big eyes looking around, head tilts, a bobbing "?"), *your turn* is happy (^ ^ eyes bouncing, blush and sparkles, calm once seen), an idle session is drowsy, and with no sessions the face sleeps with Zzz and the occasional peek. The eyes blink, ease from one mood into the next, and boing when a state changes.
@@ -34,6 +36,7 @@ First release: a desk status light that shows when an AI coding agent needs you.
 - **Hook installer** (`hooks/install.py`) for Claude Code, Cursor and Codex on Windows, macOS and Linux, Python 3.8+ with the standard library only. It runs without a clone (`curl … | python3 -` or `irm … | python -`), keeps existing hooks, replaces earlier Claude Needs You hooks, backs up each changed file, and supports `--agents`, `--dry-run` and `--uninstall`. Run from a virtualenv, it points the hooks at the system Python.
 - **Relay** (`hooks/relay.py`) that converts each agent's hook payload to the board's format with a one-second timeout and always exits 0, so agents carry on when the board is off.
 
-[Unreleased]: https://github.com/AncientiCe/claude_needs_you/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/AncientiCe/claude_needs_you/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/AncientiCe/claude_needs_you/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AncientiCe/claude_needs_you/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AncientiCe/claude_needs_you/releases/tag/v0.1.0
