@@ -8,6 +8,9 @@
 #include <ESPmDNS.h>
 #include <ArduinoJson.h>
 #include <Arduino_GFX_Library.h>
+#include <U8g2lib.h>
+
+#include "face.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -47,19 +50,26 @@
 #define DWELL_DONE_MS (4UL * 1000)
 #define DWELL_ACKED_MS (2UL * 1000)
 #define DWELL_IDLE_MS (3UL * 1000)
-// Animation frame intervals; 0 = static, redrawn on change only.
+// Animation frame intervals.
 #define FRAME_MS 33
 #define FRAME_IDLE_MS 50
+#define POP_MS 600  // eyes boing for this long after a state change
 
-// ---- Colours (RGB565) ----
+// ---- Layout: eyes on the left, text panel on the right ----
+#define FACE_X 150
+#define FACE_Y 120
+#define PANEL_X 306
+#define PANEL_W (W - PANEL_X - 12)
+
+// ---- Colours (RGB565), bright accents on AMOLED black ----
 #define C_BLACK 0x0000
 #define C_WHITE 0xFFFF
-#define C_WORKING 0x0239
-#define C_NEEDS 0xFD20
-#define C_DONE 0x0480
-#define C_ACKED 0x2945
-#define C_IDLE 0x2104
-#define C_DIM 0x8410
+#define C_WORKING 0x451F
+#define C_NEEDS 0xFD80
+#define C_DONE 0x3EEF
+#define C_ACKED 0x2B68
+#define C_IDLE 0x7BD4
+#define C_DIM 0x6B6D
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(PIN_LCD_CS, PIN_LCD_SCK, PIN_LCD_D0, PIN_LCD_D1, PIN_LCD_D2, PIN_LCD_D3);
 Arduino_RM67162 *panel = new Arduino_RM67162(bus, PIN_LCD_RST, 1 /* landscape */);
@@ -77,7 +87,8 @@ struct Session {
   char msg[96];
   State st;
   bool acked;
-  uint32_t since;
+  uint32_t since;    // last event
+  uint32_t changed;  // last change of state
 };
 
 Session sessions[MAX_SESSIONS];
@@ -121,7 +132,7 @@ static Session *findSession(const char *id, bool create) {
 }
 
 static void setState(Session *s, State st) {
-  if (s->st != st) s->since = millis();
+  if (s->st != st) s->since = s->changed = millis();
   s->st = st;
   s->acked = false;
   if (st != ST_NEEDS) s->msg[0] = 0;
@@ -173,7 +184,7 @@ static void expireSessions() {
   for (auto &s : sessions) {
     if (!s.used) continue;
     uint32_t age = now - s.since;
-    if (s.st == ST_WORKING && age > WORKING_STALE_MS) { s.st = ST_IDLE; s.since = now; dirty = true; }
+    if (s.st == ST_WORKING && age > WORKING_STALE_MS) { s.st = ST_IDLE; s.since = s.changed = now; dirty = true; }
     else if (s.st == ST_DONE && age > DONE_EXPIRE_MS) { s.used = false; dirty = true; }
     else if (s.st == ST_DONE && !s.acked && age > DONE_FADE_MS) { s.acked = true; dirty = true; }
     else if (s.st == ST_IDLE && age > IDLE_EXPIRE_MS) { s.used = false; dirty = true; }
@@ -234,74 +245,63 @@ static int currentFocus() {
 
 // ---------------------------------------------------------------- display
 
-// Built-in 6x8 font scaled by `size`.
-static void centerText(const char *t, int y, uint8_t size, uint16_t col, int dx = 0) {
-  gfx->setTextSize(size);
+static int textWidth(const char *t) {
+  int16_t x1, y1;
+  uint16_t w, h;
+  gfx->getTextBounds(t, 0, 0, &x1, &y1, &w, &h);
+  return w;
+}
+
+static void text(const uint8_t *font, const char *t, int x, int y, uint16_t col) {
+  gfx->setFont(font);
   gfx->setTextColor(col);
-  int w = strlen(t) * 6 * size;
-  gfx->setCursor((W - w) / 2 + dx, y);
+  gfx->setCursor(x, y);
   gfx->print(t);
 }
 
-// Blend two RGB565 colours, t = 0 gives a, t = 1 gives b.
-static uint16_t mix565(uint16_t a, uint16_t b, float t) {
-  int r = (a >> 11) + (int)(((b >> 11) - (a >> 11)) * t);
-  int g = ((a >> 5) & 63) + (int)((((b >> 5) & 63) - ((a >> 5) & 63)) * t);
-  int bl = (a & 31) + (int)(((b & 31) - (a & 31)) * t);
-  return (r << 11) | (g << 5) | bl;
-}
-
-// 0..1..0 sine wave with the given period.
-static float wave(uint32_t period) {
-  return 0.5f - 0.5f * cosf(2 * PI * (millis() % period) / period);
-}
-
-// Needs you: a thick border that breathes and a background that pulses.
-static void animNeeds(uint16_t *bg) {
-  float p = wave(1200);
-  *bg = mix565(C_NEEDS, C_BLACK, 0.35f * p);
-  gfx->fillScreen(*bg);
-  int t = 2 + (int)(10 * p);
-  for (int i = 0; i < t; i++) gfx->drawRect(i, i, W - 2 * i, H - 40 - 2 * i, C_BLACK);
-}
-
-// Working: a bright segment sweeping back and forth along a track.
-static void animWorking() {
-  const int x0 = 48, x1 = W - 48, y = 150, h = 6, seg = 110;
-  gfx->fillRoundRect(x0, y, x1 - x0, h, 3, mix565(C_WORKING, C_BLACK, 0.5f));
-  int x = x0 + (int)((x1 - x0 - seg) * wave(1600));
-  gfx->fillRoundRect(x, y, seg, h, 3, mix565(C_WORKING, C_WHITE, 0.7f));
-}
-
-// Your turn: a soft band of light passes over the screen every few seconds.
-static void animDone() {
-  const uint32_t period = 3500, pass = 900;
-  uint32_t t = millis() % period;
-  if (t >= pass) return;
-  const int bw = 90;
-  int cx = -bw + (int)((W + 2 * bw) * t / pass);
-  for (int i = 0; i < 3; i++) {
-    int w = bw - i * 30;
-    gfx->fillRect(cx - w / 2, 0, w, H - 40, mix565(C_DONE, C_WHITE, 0.08f + 0.08f * i));
+// Prints `t` at (x, y) in the current font, cut short with "..." to fit maxW.
+static void fitText(const char *t, int x, int y, int maxW) {
+  char buf[104];
+  copyStr(buf, sizeof(buf), t);
+  int n = strlen(buf);
+  while (n > 0 && textWidth(buf) > maxW) {
+    n--;
+    copyStr(buf, n + 1, t);
+    strcat(buf, "...");
   }
+  gfx->setCursor(x, y);
+  gfx->print(buf);
 }
 
-static void wrapText(const char *t, int y, int lines, uint8_t size, uint16_t col) {
-  gfx->setTextSize(size);
-  gfx->setTextColor(col);
-  const int perLine = (W - 32) / (6 * size);
-  int len = strlen(t);
-  for (int l = 0; l < lines && l * perLine < len; l++) {
-    char buf[96];
-    copyStr(buf, min((int)sizeof(buf), perLine + 1), t + l * perLine);
-    gfx->setCursor(16, y + l * 10 * size);
+// Word-wraps `t` into at most `lines` lines of maxW pixels, starting at
+// baseline y; whatever doesn't fit ends in "...".
+static void wrapText(const char *t, int x, int y, int maxW, int lineH, int lines) {
+  char buf[100];
+  for (int l = 0; l < lines && *t; l++) {
+    const char *end = t, *q = t;
+    while (*q) {
+      const char *e = q;
+      while (*e && *e != ' ') e++;
+      copyStr(buf, min((int)(e - t) + 1, (int)sizeof(buf)), t);
+      if (textWidth(buf) > maxW) break;
+      end = e;
+      q = *e ? e + 1 : e;
+    }
+    if (end == t || (l == lines - 1 && *end)) {  // overlong word or last line
+      fitText(t, x, y + l * lineH, maxW);
+      return;
+    }
+    copyStr(buf, min((int)(end - t) + 1, (int)sizeof(buf)), t);
+    gfx->setCursor(x, y + l * lineH);
     gfx->print(buf);
+    t = *end ? end + 1 : end;
   }
 }
 
 // Red / green / blue / white bars with labels and a white frame to check
 // colour order, inversion and edge offsets.
 static void drawTestPattern() {
+  gfx->setFont();
   gfx->fillScreen(C_BLACK);
   const uint16_t cols[] = {0xF800, 0x07E0, 0x001F, C_WHITE};
   const char *names[] = {"RED", "GREEN", "BLUE", "WHITE"};
@@ -313,72 +313,108 @@ static void drawTestPattern() {
     gfx->setCursor(20, 14 + i * bh);
     gfx->print(names[i]);
   }
+  gfx->setTextSize(1);
   gfx->drawRect(0, 0, W, H, C_WHITE);
   gfx->flush();
+}
+
+static Mood moodOf(const Session &s) {
+  switch (s.st) {
+    case ST_NEEDS: return MOOD_CURIOUS;
+    case ST_WORKING: return MOOD_FOCUSED;
+    case ST_DONE: return s.acked ? MOOD_CONTENT : MOOD_HAPPY;
+    default: return MOOD_DROWSY;
+  }
+}
+
+static uint16_t colourOf(const Session &s) {
+  switch (s.st) {
+    case ST_NEEDS: return C_NEEDS;
+    case ST_WORKING: return C_WORKING;
+    case ST_DONE: return s.acked ? C_ACKED : C_DONE;
+    default: return C_IDLE;
+  }
+}
+
+// "for 3 min", "finished 2 min ago" and so on, from the last state change.
+static void ageText(char *out, size_t n, const Session &s) {
+  unsigned long m = (millis() - s.changed) / 60000;
+  switch (s.st) {
+    case ST_NEEDS: m ? snprintf(out, n, "waiting %lu min", m) : snprintf(out, n, "waiting for you"); break;
+    case ST_WORKING: m ? snprintf(out, n, "for %lu min", m) : snprintf(out, n, "just started"); break;
+    case ST_DONE: m ? snprintf(out, n, "finished %lu min ago", m) : snprintf(out, n, "just finished"); break;
+    default: m ? snprintf(out, n, "quiet for %lu min", m) : snprintf(out, n, "quiet"); break;
+  }
+}
+
+// Bottom of the panel: a dot and a count per state, greyed out at zero.
+static void drawCounts(int x, int y) {
+  int counts[4] = {0, 0, 0, 0};
+  for (auto &s : sessions)
+    if (s.used) counts[s.st]++;
+  static const struct { State st; uint16_t c; } chips[] = {
+    {ST_NEEDS, C_NEEDS}, {ST_WORKING, C_WORKING}, {ST_DONE, C_DONE}, {ST_IDLE, C_IDLE}};
+  for (int i = 0; i < 4; i++) {
+    int n = counts[chips[i].st], cx = x + i * 56;
+    gfx->fillCircle(cx + 6, y - 6, 6, n ? chips[i].c : mix565(chips[i].c, C_BLACK, 0.7f));
+    char num[4];
+    snprintf(num, sizeof(num), "%d", n);
+    text(u8g2_font_fub11_tr, num, cx + 18, y, n ? C_WHITE : C_DIM);
+  }
 }
 
 static void draw() {
   if (testPattern && millis() - testPattern < 20000) { drawTestPattern(); return; }
   testPattern = 0;
   int f = currentFocus();
-  int counts[4] = {0, 0, 0, 0};
-  for (auto &s : sessions)
-    if (s.used) counts[s.st]++;
-
-  uint16_t bg = C_IDLE, fg = C_WHITE;
-  const char *word = "IDLE";
+  gfx->fillScreen(C_BLACK);
 
   if (f < 0) {
-    // Nothing going on: the text drifts slowly, which also spares the
-    // AMOLED from burn-in.
+    // Nothing going on: the face sleeps. Everything drifts a little so the
+    // AMOLED doesn't burn in.
     uint32_t now = millis();
-    int dx = (int)(90 * sinf(2 * PI * (now % 23000) / 23000));
-    int dy = (int)(30 * sinf(2 * PI * (now % 31000) / 31000));
-    gfx->fillScreen(C_BLACK);
-    centerText("Claude", 50 + dy, 6, C_DIM, dx);
+    int dx = 12 * sinf(2 * PI * (now % 23000) / 23000);
+    int dy = 8 * sinf(2 * PI * (now % 31000) / 31000);
+    drawFace(gfx, MOOD_SLEEPY, FACE_X + dx, FACE_Y + dy, C_IDLE, 0);
+    text(u8g2_font_fub20_tr, "Sleeping", PANEL_X + dx, 70 + dy, C_IDLE);
     if (WiFi.status() == WL_CONNECTED) {
-      centerText("no sessions", 130 + dy, 3, C_DIM, dx);
-      centerText(WiFi.localIP().toString().c_str(), 190 + dy, 2, C_DIM, dx);
+      text(u8g2_font_fur14_tr, "no sessions", PANEL_X + dx, 104 + dy, C_DIM);
+      text(u8g2_font_fur11_tr, WiFi.localIP().toString().c_str(), PANEL_X + dx, 180 + dy, C_DIM);
     } else {
-      centerText(HAVE_WIFI ? "wifi..." : "no wifi config", 130 + dy, 3, C_DIM, dx);
-      centerText("serial ok", 190 + dy, 2, C_DIM, dx);
+      text(u8g2_font_fur14_tr, HAVE_WIFI ? "wifi..." : "no wifi config", PANEL_X + dx, 104 + dy, C_DIM);
+      text(u8g2_font_fur11_tr, "serial ok", PANEL_X + dx, 180 + dy, C_DIM);
     }
     gfx->flush();
     return;
   }
 
   const Session &s = sessions[f];
-  switch (s.st) {
-    case ST_NEEDS: bg = C_NEEDS; fg = C_BLACK; word = "NEEDS YOU"; break;
-    case ST_DONE: bg = s.acked ? C_ACKED : C_DONE; word = "YOUR TURN"; break;
-    case ST_WORKING: bg = C_WORKING; word = "WORKING"; break;
-    default: break;
-  }
+  uint16_t col = colourOf(s);
+  uint32_t sinceChange = millis() - s.changed;
+  float pop = sinceChange < POP_MS ? 1 - (float)sinceChange / POP_MS : 0;
+  drawFace(gfx, moodOf(s), FACE_X, FACE_Y, col, pop);
 
-  if (s.st == ST_NEEDS) animNeeds(&bg);
-  else gfx->fillScreen(bg);
-  if (s.st == ST_WORKING) animWorking();
-  if (s.st == ST_DONE && !s.acked) animDone();
+  static const char *titles[] = {"Idle", "Working", "Your turn", "Needs you"};
+  text(u8g2_font_fub20_tr, titles[s.st], PANEL_X, 46, col);
 
-  centerText(word, 20, 7, fg);
   char label[40];
   if (s.agent[0]) snprintf(label, sizeof(label), "%s (%s)", s.project, s.agent);
   else copyStr(label, sizeof(label), s.project);
-  centerText(label, 92, strlen(label) * 18 <= W - 16 ? 3 : 2, fg);
-  if (s.st == ST_NEEDS && s.msg[0]) wrapText(s.msg, 130, 2, 2, fg);
+  gfx->setFont(u8g2_font_fur14_tr);
+  gfx->setTextColor(C_WHITE);
+  fitText(label, PANEL_X, 80, PANEL_W);
 
-  // Bottom row: counts per state
-  gfx->fillRect(0, H - 40, W, 40, C_BLACK);
-  struct { State st; uint16_t c; const char *l; } chips[] = {
-    {ST_NEEDS, C_NEEDS, "need"}, {ST_WORKING, C_WORKING, "work"}, {ST_DONE, C_DONE, "done"}, {ST_IDLE, C_IDLE, "idle"}};
-  gfx->setTextSize(2);
-  for (int i = 0; i < 4; i++) {
-    int x = 16 + i * (W / 4);
-    gfx->fillRect(x, H - 32, 24, 24, chips[i].c);
-    gfx->setTextColor(counts[chips[i].st] ? C_WHITE : C_DIM);
-    gfx->setCursor(x + 32, H - 28);
-    gfx->printf("%d %s", counts[chips[i].st], chips[i].l);
+  char age[32];
+  ageText(age, sizeof(age), s);
+  text(u8g2_font_fur11_tr, age, PANEL_X, 104, C_DIM);
+
+  if (s.st == ST_NEEDS && s.msg[0]) {
+    gfx->setFont(u8g2_font_fur11_tr);
+    gfx->setTextColor(mix565(C_NEEDS, C_WHITE, 0.6f));
+    wrapText(s.msg, PANEL_X, 134, PANEL_W, 19, 3);
   }
+
+  drawCounts(PANEL_X, 224);
   gfx->flush();
 }
 
@@ -532,12 +568,11 @@ static void wifiLoop() {
 
 // ---------------------------------------------------------------- main
 
+// The face is always alive (blinking, easing between moods), so every
+// screen animates; the sleeping one a little slower.
 static uint32_t frameInterval(int f) {
   if (testPattern) return 0;
-  if (f < 0) return FRAME_IDLE_MS;
-  const Session &s = sessions[f];
-  if (s.st == ST_NEEDS || s.st == ST_WORKING || (s.st == ST_DONE && !s.acked)) return FRAME_MS;
-  return 0;
+  return f < 0 ? FRAME_IDLE_MS : FRAME_MS;
 }
 
 void setup() {
@@ -547,6 +582,7 @@ void setup() {
   pinMode(PIN_LCD_EN, OUTPUT);
   digitalWrite(PIN_LCD_EN, HIGH);
   if (!gfx->begin()) Serial.println("display init failed (frame buffer alloc?)");
+  gfx->setTextWrap(false);
   Serial.printf("psram %u free\n", ESP.getFreePsram());
   gfx->fillScreen(C_BLACK);
   gfx->flush();

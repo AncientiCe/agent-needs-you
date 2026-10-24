@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Animations for every state.** *Needs you* replaces the hard blink with a breathing border and a pulsing background; *working* shows a bar sweeping back and forth; an unseen *your turn* gets a soft band of light passing over every few seconds (a seen one stays still); the idle screen drifts slowly, which also protects the AMOLED from burn-in.
+- **The screen has eyes.** Each state gets its own animated face: *working* is focused (narrowed eyes reading back and forth, the odd bead of sweat), *needs you* is curious (big eyes looking around, head tilts, a bobbing "?"), *your turn* is happy (^ ^ eyes bouncing, blush and sparkles, calm once seen), an idle session is drowsy, and with no sessions the face sleeps with Zzz and the occasional peek. The eyes blink, ease from one mood into the next, and boing when a state changes.
+- **New layout and type.** Eyes on the left; on the right the state, the project, how long it has been in that state ("for 3 min", "finished 2 min ago"), the message when it needs you, and session counts. Text uses proper proportional fonts on a black background instead of the scaled pixel font on full-colour backgrounds.
 
 ### Changed
 
