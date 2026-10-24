@@ -1,13 +1,15 @@
 # Claude Needs You
 
-A desk status light for [Claude Code](https://claude.com/claude-code) sessions. A LilyGO T-Display S3 AMOLED shows whether any session is working, finished, or blocked waiting on you, so a permission prompt never sits unnoticed in a background window.
+A desk status light for AI coding agents: [Claude Code](https://claude.com/claude-code), Cursor and Codex. A LilyGO T-Display S3 AMOLED shows whether any session is working, finished, or blocked waiting on you, so a permission prompt never sits unnoticed in a background window.
 
-| Screen | Meaning | Hook event |
-|---|---|---|
-| Blue **WORKING** | Claude is busy | `UserPromptSubmit`, `PostToolUse` |
-| Amber **NEEDS YOU** (blinking) | Permission prompt or idle input wait; shows the message | `Notification` |
-| Green **YOUR TURN** | Claude finished its reply | `Stop` |
-| Black idle screen | No sessions; shows the board's IP | `SessionEnd` removes a session |
+| Screen | Meaning |
+|---|---|
+| Blue **WORKING** | The agent is busy |
+| Amber **NEEDS YOU** (blinking) | Permission prompt or idle input wait; shows the message |
+| Green **YOUR TURN** | The agent finished its reply |
+| Black idle screen | No sessions; shows the board's IP |
+
+Cursor and Codex sessions are labelled with the agent name, e.g. `aice (cursor)`.
 
 The screen shows the most urgent session (needs you > your turn > working > idle) and a bottom row of counts per state. Working sessions go stale after 30 minutes; finished ones clear after 2 hours.
 
@@ -30,23 +32,43 @@ pio run -t upload
 
 After boot the board prints `wifi up: http://<ip>/` over serial and shows the IP on its idle screen.
 
-## Claude Code hooks
+## Agent hooks
 
-The board accepts Claude Code's raw hook JSON at `POST /hook`, so no client script is needed. Add a command hook to `~/.claude/settings.json` for each of `SessionStart`, `UserPromptSubmit`, `PostToolUse` (matcher `*`), `Notification`, `Stop` and `SessionEnd`, appending to any hooks you already have:
+Install hooks for every agent found on the machine (needs Python 3, standard library only):
 
-```json
-{
-  "hooks": [
-    {
-      "type": "command",
-      "command": "curl.exe -s -m 2 --connect-timeout 1 -o /dev/null -H \"Content-Type: application/json\" -H \"Expect:\" --data-binary @- http://<device-ip>/hook || exit 0",
-      "timeout": 5
-    }
-  ]
-}
+```bash
+python hooks/install.py --ip <device-ip>
 ```
 
-`curl.exe` avoids PowerShell's `curl` alias (use plain `curl` on macOS/Linux). If the board is off, the hook fails within a second and never blocks Claude.
+Options: `--agents claude,cursor,codex` to pick agents, `--dry-run` to see what would change, `--uninstall` to remove the hooks. Run it on each computer whose agents should report to the board.
+
+The installer copies [`hooks/relay.py`](hooks/relay.py) to `~/.claude-light/` and adds one hook per event to `~/.claude/settings.json`, `~/.cursor/hooks.json` and `~/.codex/hooks.json`. Existing hooks are kept, earlier Claude Needs You hooks are replaced, and each changed file is backed up next to itself (`*.bak-claude-light-<timestamp>`).
+
+The relay converts each agent's hook payload to the board's format, posts it with a one-second timeout, prints whatever the agent expects from a hook, and always exits 0. If the board is off, hooks carry on normally.
+
+| Board state | Claude Code | Codex | Cursor |
+|---|---|---|---|
+| Working | `UserPromptSubmit`, `PostToolUse` | `UserPromptSubmit`, `PostToolUse` | `beforeSubmitPrompt`, `postToolUse` |
+| Needs you | `Notification` | `PermissionRequest` | — |
+| Your turn | `Stop` | `Stop`, `Interrupt` | `stop` |
+| Added / removed | `SessionStart` / `SessionEnd` | `SessionStart` / `SessionEnd` | `sessionStart` / `sessionEnd` |
+
+Notes:
+- **Codex** skips new hooks until you trust them: run `/hooks` in Codex once after installing.
+- **Cursor** has no hook that fires when it waits for your approval without also answering it, so Cursor sessions show working and your turn, never needs you.
+- Already-running sessions may need a restart to pick up new hooks.
+
+### Anything else
+
+Any script can drive the board directly:
+
+```bash
+curl -s -m 2 -H "Content-Type: application/json" \
+  -d '{"hook_event_name":"Notification","session_id":"ci-build","cwd":"my-project","message":"CI failed","agent":"ci"}' \
+  http://<device-ip>/hook
+```
+
+`hook_event_name` is one of `UserPromptSubmit` (working), `Notification` (needs you), `Stop` (your turn) or `SessionEnd` (remove). The last folder of `cwd` is the label; `agent` and `message` are optional. The board tracks up to 8 sessions.
 
 ## Debugging
 

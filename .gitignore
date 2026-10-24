@@ -1,3 +1,4 @@
 .pio/
 .vscode/
 include/secrets.h
+__pycache__/

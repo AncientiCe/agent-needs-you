@@ -61,6 +61,7 @@ struct Session {
   bool used;
   char id[40];
   char project[28];
+  char agent[10];  // "cursor", "codex"; empty for Claude Code
   char msg[96];
   State st;
   bool acked;
@@ -129,11 +130,13 @@ static void handleEvent(JsonDocument &doc) {
   const char *cwd = doc["cwd"] | "";
   if (*cwd) copyStr(s->project, sizeof(s->project), baseName(cwd));
   if (!s->project[0]) copyStr(s->project, sizeof(s->project), "session");
+  const char *agent = doc["agent"] | "";
+  if (*agent) copyStr(s->agent, sizeof(s->agent), agent);
 
   if (strcmp(ev, "UserPromptSubmit") == 0 || strcmp(ev, "PostToolUse") == 0 ||
       strcmp(ev, "PreToolUse") == 0 || strcmp(ev, "SessionStart") == 0) {
     setState(s, strcmp(ev, "SessionStart") == 0 ? ST_IDLE : ST_WORKING);
-  } else if (strcmp(ev, "Notification") == 0) {
+  } else if (strcmp(ev, "Notification") == 0 || strcmp(ev, "PermissionRequest") == 0) {
     setState(s, ST_NEEDS);
     copyStr(s->msg, sizeof(s->msg), doc["message"] | "");
   } else if (strcmp(ev, "Stop") == 0) {
@@ -264,7 +267,10 @@ static void draw() {
     for (int i = 0; i < 8; i++) gfx->drawRect(i, i, W - 2 * i, H - 40 - 2 * i, C_BLACK);
 
   centerText(word, 20, 7, fg);
-  centerText(s.project, 92, 3, fg);
+  char label[40];
+  if (s.agent[0]) snprintf(label, sizeof(label), "%s (%s)", s.project, s.agent);
+  else copyStr(label, sizeof(label), s.project);
+  centerText(label, 92, strlen(label) * 18 <= W - 16 ? 3 : 2, fg);
   if (s.st == ST_NEEDS && s.msg[0]) wrapText(s.msg, 130, 2, 2, fg);
 
   // Bottom row: counts per state
@@ -291,6 +297,7 @@ static JsonDocument &hookFilter() {
     filter["session_id"] = true;
     filter["cwd"] = true;
     filter["message"] = true;
+    filter["agent"] = true;
   }
   return filter;
 }
@@ -304,6 +311,7 @@ static void sendStateJson(Print &out) {
     JsonObject o = arr.add<JsonObject>();
     o["id"] = s.id;
     o["project"] = s.project;
+    if (s.agent[0]) o["agent"] = s.agent;
     o["state"] = names[s.st];
     o["acked"] = s.acked;
     o["age_s"] = (millis() - s.since) / 1000;
