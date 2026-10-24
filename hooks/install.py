@@ -50,8 +50,18 @@ def is_ours(command):
     return MARKER in c or ("curl" in c and "--data-binary @-" in c and "/hook" in c)
 
 
+def python_path():
+    """The interpreter hooks should run: never a virtualenv that may be deleted later."""
+    exe = sys.executable
+    if sys.prefix != sys.base_prefix:
+        base = getattr(sys, "_base_executable", "") or shutil.which("python3") or shutil.which("python")
+        if base and Path(base).exists():
+            exe = base
+    return Path(exe).as_posix()
+
+
 def hook_command(relay, agent, url):
-    py = Path(sys.executable).as_posix()
+    py = python_path()
     return f'"{py}" -S "{relay.as_posix()}" --agent {agent} --url {url}'
 
 

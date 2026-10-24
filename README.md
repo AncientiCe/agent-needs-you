@@ -34,11 +34,14 @@ After boot the board prints `wifi up: http://<ip>/` over serial and shows the IP
 
 ## Agent hooks
 
-Install hooks for every agent found on the machine (needs Python 3, standard library only):
+Install hooks for every agent found on the machine. Works on Windows, macOS and Linux; needs Python 3.8+, standard library only.
 
 ```bash
-python hooks/install.py --ip <device-ip>
+python hooks/install.py --ip <device-ip>     # Windows
+python3 hooks/install.py --ip <device-ip>    # macOS / Linux
 ```
+
+Hooks call the Python that ran the installer (or the system Python, if run from a virtualenv), so install with the interpreter you want the hooks to use.
 
 Options: `--agents claude,cursor,codex` to pick agents, `--dry-run` to see what would change, `--uninstall` to remove the hooks. Run it on each computer whose agents should report to the board.
 
