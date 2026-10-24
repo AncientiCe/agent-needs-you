@@ -1,0 +1,57 @@
+# CI: build the firmware and smoke-test the hook installer on every OS it supports.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  firmware:
+    name: Firmware build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - run: cp include/secrets.h.example include/secrets.h
+      - run: pio run
+
+  hooks:
+    name: Hooks (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.8", "3.13"]
+        exclude:
+          - os: macos-latest
+            python: "3.8"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile
+        run: python -m py_compile hooks/install.py hooks/relay.py
+      - name: Install and uninstall into a scratch home
+        shell: bash
+        run: |
+          home="$RUNNER_TEMP/home"
+          mkdir -p "$home"
+          python hooks/install.py --home "$home" --agents claude,cursor,codex --ip 127.0.0.1
+          grep -q relay.py "$home/.claude/settings.json"
+          grep -q relay.py "$home/.cursor/hooks.json"
+          grep -q relay.py "$home/.codex/hooks.json"
+          echo '{"hook_event_name":"Stop","session_id":"ci","cwd":"/tmp/x"}' \
+            | python "$home/.claude-light/relay.py" --agent claude --url http://127.0.0.1:9/hook
+          python hooks/install.py --home "$home" --agents claude,cursor,codex --uninstall
+          ! grep -q relay.py "$home/.claude/settings.json"
