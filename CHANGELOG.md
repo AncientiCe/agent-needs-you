@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Screen rotates through sessions** instead of sticking to the single most urgent one. Priority is now needs you > working > your turn, and higher priority stays up longer (15 s / 8 s / 4 s, 2 s once seen). A session that finishes or starts waiting is shown immediately, then the rotation moves on, so a finished session no longer hides one that is still working. The bottom row now lists counts in the same order.
+
 ## [0.1.0] - 2026-10-24
 
 First release: a desk status light that shows when an AI coding agent needs you.

@@ -38,6 +38,14 @@
 #define IDLE_EXPIRE_MS (2UL * 60 * 60 * 1000)
 #define NEEDS_EXPIRE_MS (8UL * 60 * 60 * 1000)
 #define FOCUS_HOLD_MS (30UL * 1000)
+// Rotation: every session gets screen time, more urgent ones longer. A
+// session that just finished or started waiting is shown at once.
+#define ANNOUNCE_MS (8UL * 1000)
+#define DWELL_NEEDS_MS (15UL * 1000)
+#define DWELL_WORKING_MS (8UL * 1000)
+#define DWELL_DONE_MS (4UL * 1000)
+#define DWELL_ACKED_MS (2UL * 1000)
+#define DWELL_IDLE_MS (3UL * 1000)
 
 // ---- Colours (RGB565) ----
 #define C_BLACK 0x0000
@@ -71,6 +79,8 @@ struct Session {
 Session sessions[MAX_SESSIONS];
 int focusIdx = -1;          // manual focus (R button), -1 = auto
 uint32_t focusAt = 0;
+int rotIdx = -1;            // session shown by the rotation
+uint32_t rotAt = 0, rotFor = 0;
 bool dirty = true;
 uint32_t testPattern = 0;  // millis() when the test pattern was requested, 0 = off
 
@@ -127,6 +137,7 @@ static void handleEvent(JsonDocument &doc) {
   }
 
   Session *s = findSession(id, true);
+  State before = s->st;
   const char *cwd = doc["cwd"] | "";
   if (*cwd) copyStr(s->project, sizeof(s->project), baseName(cwd));
   if (!s->project[0]) copyStr(s->project, sizeof(s->project), "session");
@@ -143,6 +154,13 @@ static void handleEvent(JsonDocument &doc) {
     setState(s, ST_DONE);
   }
   s->since = millis();
+  // Announce a session that just finished or started waiting.
+  if (s->st != before && (s->st == ST_DONE || s->st == ST_NEEDS)) {
+    focusIdx = -1;
+    rotIdx = s - sessions;
+    rotAt = millis();
+    rotFor = s->st == ST_NEEDS ? DWELL_NEEDS_MS : ANNOUNCE_MS;
+  }
   dirty = true;
 }
 
@@ -158,32 +176,55 @@ static void expireSessions() {
   }
 }
 
-// Higher is more urgent. Acked DONE ranks below WORKING.
+// Higher is more urgent: needs you, working, done, acked done, idle.
 static int rank(const Session &s) {
   switch (s.st) {
     case ST_NEEDS: return 4;
-    case ST_DONE: return s.acked ? 1 : 3;
-    case ST_WORKING: return 2;
+    case ST_WORKING: return 3;
+    case ST_DONE: return s.acked ? 1 : 2;
     default: return 0;
   }
 }
 
-static int autoFocus() {
-  int best = -1;
-  for (int i = 0; i < MAX_SESSIONS; i++) {
-    const Session &s = sessions[i];
-    if (!s.used) continue;
-    if (best < 0 || rank(s) > rank(sessions[best]) ||
-        (rank(s) == rank(sessions[best]) && s.since > sessions[best].since))
-      best = i;
+static uint32_t dwell(const Session &s) {
+  switch (s.st) {
+    case ST_NEEDS: return DWELL_NEEDS_MS;
+    case ST_WORKING: return DWELL_WORKING_MS;
+    case ST_DONE: return s.acked ? DWELL_ACKED_MS : DWELL_DONE_MS;
+    default: return DWELL_IDLE_MS;
   }
-  return best;
+}
+
+// Sessions in rotation order, most urgent first (slot order within a rank).
+// Idle sessions only take part when nothing else is going on.
+static int rotation(int *out) {
+  int n = 0;
+  for (int r = 4; r >= 1; r--)
+    for (int i = 0; i < MAX_SESSIONS; i++)
+      if (sessions[i].used && rank(sessions[i]) == r) out[n++] = i;
+  if (n == 0)
+    for (int i = 0; i < MAX_SESSIONS; i++)
+      if (sessions[i].used) out[n++] = i;
+  return n;
 }
 
 static int currentFocus() {
   if (focusIdx >= 0 && sessions[focusIdx].used && millis() - focusAt < FOCUS_HOLD_MS) return focusIdx;
   focusIdx = -1;
-  return autoFocus();
+  int order[MAX_SESSIONS];
+  int n = rotation(order);
+  int pos = -1;
+  for (int i = 0; i < n; i++)
+    if (order[i] == rotIdx) pos = i;
+  if (pos >= 0 && millis() - rotAt < rotFor) return rotIdx;
+  // Dwell over (or the shown session left the rotation): move on, wrapping
+  // back to the most urgent session.
+  int next = n ? order[(pos + 1) % n] : -1;
+  if (next != rotIdx) dirty = true;
+  rotIdx = next;
+  rotAt = millis();
+  rotFor = next >= 0 ? dwell(sessions[next]) : 0;
+  return rotIdx;
 }
 
 // ---------------------------------------------------------------- display
@@ -276,7 +317,7 @@ static void draw() {
   // Bottom row: counts per state
   gfx->fillRect(0, H - 40, W, 40, C_BLACK);
   struct { State st; uint16_t c; const char *l; } chips[] = {
-    {ST_NEEDS, C_NEEDS, "need"}, {ST_DONE, C_DONE, "done"}, {ST_WORKING, C_WORKING, "work"}, {ST_IDLE, C_IDLE, "idle"}};
+    {ST_NEEDS, C_NEEDS, "need"}, {ST_WORKING, C_WORKING, "work"}, {ST_DONE, C_DONE, "done"}, {ST_IDLE, C_IDLE, "idle"}};
   gfx->setTextSize(2);
   for (int i = 0; i < 4; i++) {
     int x = 16 + i * (W / 4);
@@ -306,9 +347,11 @@ static void sendStateJson(Print &out) {
   JsonDocument doc;
   JsonArray arr = doc["sessions"].to<JsonArray>();
   static const char *names[] = {"idle", "working", "done", "needs_you"};
+  int f = currentFocus();
   for (auto &s : sessions) {
     if (!s.used) continue;
     JsonObject o = arr.add<JsonObject>();
+    if (&s - sessions == f) o["shown"] = true;
     o["id"] = s.id;
     o["project"] = s.project;
     if (s.agent[0]) o["agent"] = s.agent;
