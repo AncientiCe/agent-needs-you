@@ -92,3 +92,7 @@ curl -s -m 2 -H "Content-Type: application/json" \
 - Opening the serial port with DTR/RTS asserted resets the board and clears the session list.
 
 The firmware streams each request body through an ArduinoJson filter rather than buffering it, so large `PostToolUse` payloads (hundreds of KB of tool output) don't exhaust RAM.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
