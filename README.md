@@ -2,6 +2,8 @@
 
 A desk status light for AI coding agents: [Claude Code](https://claude.com/claude-code), Cursor and Codex. A LilyGO T-Display S3 AMOLED shows whether any session is working, finished, or blocked waiting on you, so a permission prompt never sits unnoticed in a background window.
 
+<p align="center"><img src="docs/states.gif" alt="The board cycling through its states: asleep, working, needs you and your turn" width="480"></p>
+
 The screen is a pair of eyes with the details beside them. The eyes show how each session is doing:
 
 | Face | Meaning |
