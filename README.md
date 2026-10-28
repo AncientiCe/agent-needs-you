@@ -1,4 +1,4 @@
-# Claude Needs You
+# Agent Needs You
 
 A desk status light for AI coding agents: [Claude Code](https://claude.com/claude-code), Cursor and Codex. A LilyGO T-Display S3 AMOLED shows whether any session is working, finished, or blocked waiting on you, so a permission prompt never sits unnoticed in a background window.
 
@@ -43,12 +43,12 @@ Install hooks for every agent found on the machine. Works on Windows, macOS and 
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/install.py | python3 - --ip <device-ip>
+curl -fsSL https://raw.githubusercontent.com/AncientiCe/agent-needs-you/main/hooks/install.py | python3 - --ip <device-ip>
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/install.py | python - --ip <device-ip>
+irm https://raw.githubusercontent.com/AncientiCe/agent-needs-you/main/hooks/install.py | python - --ip <device-ip>
 ```
 
 From a clone, run `python hooks/install.py --ip <device-ip>` instead (`python3` on macOS/Linux). Options go after the `-` in the one-liners too, e.g. `... | python3 - --uninstall`.
@@ -57,7 +57,7 @@ Hooks call the Python that ran the installer (or the system Python, if run from 
 
 Options: `--agents claude,cursor,codex` to pick agents, `--dry-run` to see what would change, `--uninstall` to remove the hooks. Run it on each computer whose agents should report to the board.
 
-The installer copies [`hooks/relay.py`](hooks/relay.py) to `~/.claude-light/` and adds one hook per event to `~/.claude/settings.json`, `~/.cursor/hooks.json` and `~/.codex/hooks.json`. Existing hooks are kept, earlier Claude Needs You hooks are replaced, and each changed file is backed up next to itself (`*.bak-claude-light-<timestamp>`).
+The installer copies [`hooks/relay.py`](hooks/relay.py) to `~/.claude-light/` and adds one hook per event to `~/.claude/settings.json`, `~/.cursor/hooks.json` and `~/.codex/hooks.json`. Existing hooks are kept, earlier Agent Needs You hooks are replaced, and each changed file is backed up next to itself (`*.bak-claude-light-<timestamp>`).
 
 The relay converts each agent's hook payload to the board's format, posts it with a one-second timeout, prints whatever the agent expects from a hook, and always exits 0. If the board is off, hooks carry on normally.
 

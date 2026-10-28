@@ -1,4 +1,4 @@
-"""Forward an agent hook event to the Claude Needs You board.
+"""Forward an agent hook event to the Agent Needs You board.
 
 Each agent runs this as a hook command with its event JSON on stdin:
 

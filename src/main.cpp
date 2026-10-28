@@ -1,4 +1,4 @@
-// Claude Needs You — desk status light for Claude Code sessions.
+// Agent Needs You — desk status light for AI coding agents.
 // LilyGO T-Display S3 AMOLED (ESP32-S3, RM67162 240x536 over QSPI, used
 // landscape). Claude Code hooks POST their raw stdin JSON to /hook; the same
 // JSON lines are accepted over USB serial.

@@ -1,4 +1,4 @@
-"""Install (or remove) Claude Needs You hooks for Claude Code, Cursor and Codex.
+"""Install (or remove) Agent Needs You hooks for Claude Code, Cursor and Codex.
 
     python hooks/install.py --ip 192.168.2.141            # every agent found
     python hooks/install.py --ip 192.168.2.141 --agents claude,cursor
@@ -7,11 +7,11 @@
 
 Without a clone (relay.py is then downloaded from GitHub):
 
-    curl -fsSL https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/install.py | python3 - --ip 192.168.2.141
-    irm https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/install.py | python - --ip 192.168.2.141
+    curl -fsSL https://raw.githubusercontent.com/AncientiCe/agent-needs-you/main/hooks/install.py | python3 - --ip 192.168.2.141
+    irm https://raw.githubusercontent.com/AncientiCe/agent-needs-you/main/hooks/install.py | python - --ip 192.168.2.141
 
 Copies relay.py to ~/.claude-light/ and merges one hook per event into each
-agent's user config. Existing hooks are left alone, earlier Claude Needs You
+agent's user config. Existing hooks are left alone, earlier Agent Needs You
 hooks are replaced, and every changed file is backed up first.
 
 Standard library only.
@@ -26,7 +26,7 @@ import urllib.request
 from pathlib import Path
 
 MARKER = ".claude-light/relay.py"
-RELAY_URL = "https://raw.githubusercontent.com/AncientiCe/claude_needs_you/main/hooks/relay.py"
+RELAY_URL = "https://raw.githubusercontent.com/AncientiCe/agent-needs-you/main/hooks/relay.py"
 
 # event -> matcher (None = no matcher field)
 CLAUDE_EVENTS = {
@@ -186,7 +186,7 @@ def main():
     p.add_argument("--ip", help="board IP address, e.g. 192.168.2.141")
     p.add_argument("--url", help="full hook URL (instead of --ip)")
     p.add_argument("--agents", help="comma-separated: claude,cursor,codex (default: every one found)")
-    p.add_argument("--uninstall", action="store_true", help="remove Claude Needs You hooks")
+    p.add_argument("--uninstall", action="store_true", help="remove Agent Needs You hooks")
     p.add_argument("--dry-run", action="store_true", help="report what would change, write nothing")
     p.add_argument("--home", type=Path, default=Path.home(), help=argparse.SUPPRESS)
     args = p.parse_args()
