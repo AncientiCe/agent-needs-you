@@ -72,6 +72,7 @@ The relay converts each agent's hook payload to the board's format, posts it wit
 
 Notes:
 - **Codex** skips new hooks until you trust them: run `/hooks` in Codex once after installing.
+- **Codex questions:** unanswered desktop questions (`request_user_input_async`) currently leave the board showing working, even though permission approval prompts show needs you. The relay only maps `PermissionRequest` to needs you. Adding `PreToolUse` alone would not reliably track a pending asynchronous question: subsequent `PostToolUse` events can report working while the question is still unanswered. The [documented hook lifecycle](https://learn.chatgpt.com/docs/hooks) does not specify question-open or question-answered events; reliable support needs a verified signal for both. See [issue #1](https://github.com/AncientiCe/agent-needs-you/issues/1).
 - **Cursor** has no hook that fires when it waits for your approval without also answering it, so Cursor sessions show working and your turn, never needs you.
 - Already-running sessions may need a restart to pick up new hooks.
 

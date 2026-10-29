@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Documented the Codex desktop pending-question limitation ([#1](https://github.com/AncientiCe/agent-needs-you/issues/1)): permission prompts show needs you, but unanswered asynchronous questions are not tracked reliably by the current relay.
+
 ### Changed
 
 - **Renamed to Agent Needs You** (repository `AncientiCe/agent-needs-you`), since the board serves Claude Code, Cursor and Codex. The old GitHub URLs redirect, and hooks installed under the old name keep working and are replaced on the next install.
