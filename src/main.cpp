@@ -703,7 +703,7 @@ static void setupForm() {
   h += F("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
          "<title>Agent Needs You setup</title><style>"
          "body{font:16px system-ui,sans-serif;max-width:26em;margin:1.5em auto;padding:0 1em;background:#111;color:#eee}"
-         "h1{font-size:1.4em;color:#fdb000}label{display:block;margin:.9em 0 .2em}small{color:#999}"
+         "h1{font-size:1.4em;color:#fdb000}summary{margin-top:.9em;color:#999}label{display:block;margin:.9em 0 .2em}small{color:#999}"
          "input{box-sizing:border-box;width:100%;padding:.55em;font:inherit;border-radius:6px;border:1px solid #555;background:#222;color:#eee}"
          "button{margin-top:1.4em;width:100%;padding:.7em;font:inherit;font-weight:600;border:0;border-radius:6px;background:#fdb000;color:#111}"
          "</style><h1>Agent Needs You</h1><form method=post action=/save>"
@@ -712,13 +712,15 @@ static void setupForm() {
   h += F("\"><datalist id=nets>");
   h += scanned;
   h += F("</datalist><label>Wi-Fi password</label><input name=pass type=password maxlength=64>"
-         "<label>Static IP <small>(blank: let the router pick)</small></label><input name=ip inputmode=decimal value=\"");
+         "<label>Fixed IP <small>(optional, e.g. 192.168.1.50; blank: the router picks one)</small></label>"
+         "<input name=ip autocapitalize=off autocorrect=off value=\"");
   h += ipField(cfg.ip);
-  h += F("\"><label>Gateway <small>(router address)</small></label><input name=gateway inputmode=decimal value=\"");
+  h += F("\"><details><summary>Router settings for a fixed IP</summary>"
+         "<label>Gateway <small>(blank: the IP ending in .1)</small></label><input name=gateway autocapitalize=off value=\"");
   h += ipField(cfg.gateway);
-  h += F("\"><label>Subnet mask</label><input name=subnet inputmode=decimal placeholder=255.255.255.0 value=\"");
+  h += F("\"><label>Subnet mask <small>(blank: 255.255.255.0)</small></label><input name=subnet autocapitalize=off value=\"");
   h += ipField(cfg.subnet);
-  h += F("\"><label>Update password <small>(for firmware updates over Wi-Fi; blank keeps the current one)</small></label>"
+  h += F("\"></details><label>Update password <small>(for firmware updates over Wi-Fi; blank keeps the current one)</small></label>"
          "<input name=update type=password maxlength=32><button>Save and restart</button></form>");
   setupWeb.send(200, "text/html", h);
 }
@@ -726,12 +728,15 @@ static void setupForm() {
 static void setupSave() {
   String ssid = setupWeb.arg("ssid"), ip = setupWeb.arg("ip"), gw = setupWeb.arg("gateway"), sn = setupWeb.arg("subnet");
   ssid.trim(); ip.trim(); gw.trim(); sn.trim();
+  // Number pads in some locales only offer a comma.
+  ip.replace(',', '.'); gw.replace(',', '.'); sn.replace(',', '.');
   IPAddress a, g, m(255, 255, 255, 0);
   const char *err = nullptr;
   if (ssid.isEmpty()) err = "Pick a Wi-Fi network.";
-  else if (ip.length() && !a.fromString(ip)) err = "The static IP isn't a valid address.";
-  else if (ip.length() && !g.fromString(gw)) err = "A static IP needs the gateway (router) address too.";
+  else if (ip.length() && !a.fromString(ip)) err = "The fixed IP isn't a valid address.";
+  else if (ip.length() && gw.length() && !g.fromString(gw)) err = "The gateway isn't a valid address.";
   else if (ip.length() && sn.length() && !m.fromString(sn)) err = "The subnet mask isn't valid.";
+  if (!err && ip.length() && gw.isEmpty()) g = IPAddress(a[0], a[1], a[2], 1);  // routers are usually .1
   if (err) {
     setupWeb.send(400, "text/html", String(F("<meta name=viewport content='width=device-width'><p>")) + err +
                                         F("</p><p><a href=/>Back</a>"));

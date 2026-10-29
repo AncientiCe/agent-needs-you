@@ -32,7 +32,7 @@ A board without Wi-Fi settings starts in setup and shows how to connect:
 
 1. On a phone or laptop, join the open Wi-Fi network shown on the screen (`AgentNeedsYou-XXXX`).
 2. The setup page usually opens by itself; if not, go to `http://192.168.4.1`.
-3. Pick your network, enter its password, and optionally a static IP (with gateway and subnet mask) and an update password. Save.
+3. Pick your network and enter its password. Optionally give the board a fixed IP (the router address and subnet mask default to the usual `x.x.x.1` and `255.255.255.0`; change them under *Router settings* if your network differs) and an update password for updating over Wi-Fi. Save.
 
 The board restarts, joins your network and shows its IP on the idle screen. Use that IP for the hooks below. A static IP, or an address reserved for the board in your router, keeps the hooks pointing at the right place.
 
