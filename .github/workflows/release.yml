@@ -1,5 +1,8 @@
 # Release: when a version tag is pushed, publish a GitHub release whose notes
-# are that version's CHANGELOG.md section, copied verbatim. Nothing is generated.
+# are that version's CHANGELOG.md section, copied verbatim, with the firmware
+# attached: a full image for flashing a new board over USB, and the app image
+# for updating a running board over Wi-Fi. Built without secrets.h, so a new
+# board starts in setup.
 name: Release
 
 on:
@@ -28,6 +31,27 @@ jobs:
             exit 1
           fi
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+
+      - name: Build firmware
+        run: |
+          pip install platformio
+          pio run
+          b=.pio/build/tdisplay-s3-amoled
+          p=~/.platformio/packages
+          name="agent-needs-you-${GITHUB_REF_NAME}"
+          python "$p/tool-esptoolpy/esptool.py" --chip esp32s3 merge_bin -o "$name-full.bin" \
+            0x0 "$b/bootloader.bin" 0x8000 "$b/partitions.bin" \
+            0xe000 "$p/framework-arduinoespressif32/tools/partitions/boot_app0.bin" 0x10000 "$b/firmware.bin"
+          cp "$b/firmware.bin" "$name-update.bin"
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -38,3 +62,4 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
               --notes-file release-notes.md
           fi
+          gh release upload "$GITHUB_REF_NAME" agent-needs-you-*.bin --clobber
