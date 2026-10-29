@@ -588,6 +588,14 @@ static void handleHttp() {
   c.stop();
 }
 
+static uint8_t lastDisconnect = 0;  // why joining the network last failed
+
+static void printWifi() {
+  Serial.printf("network \"%s\" status %d ip %s rssi %d setup %s last failure %u (%s)\n", cfg.ssid, WiFi.status(),
+                WiFi.localIP().toString().c_str(), WiFi.RSSI(), setupActive ? apName : "off", lastDisconnect,
+                WiFi.disconnectReasonName((wifi_err_reason_t)lastDisconnect));
+}
+
 static void handleSerial() {
   if (!Serial.available()) return;
   String line = Serial.readStringUntil('\n');
@@ -597,6 +605,7 @@ static void handleSerial() {
   // Display tuning: inv0/inv1 colour inversion, test pattern.
   if (line == "inv0" || line == "inv1") { panel->invertDisplay(line == "inv1"); Serial.println(line); return; }
   if (line == "setup") { setupStart(); return; }
+  if (line == "wifi") { printWifi(); return; }
   if (line == "test") { testPattern = millis(); Serial.println("test"); return; }
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, line, DeserializationOption::Filter(hookFilter()));
@@ -798,6 +807,10 @@ static void setupLoop() {
 }
 
 static void wifiBegin() {
+  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) {
+    lastDisconnect = info.wifi_sta_disconnected.reason;
+    Serial.printf("wifi: can't join \"%s\": %s\n", cfg.ssid, WiFi.disconnectReasonName((wifi_err_reason_t)lastDisconnect));
+  }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   if (!cfg.ssid[0]) { setupStart(); return; }
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOSTNAME);

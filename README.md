@@ -124,7 +124,7 @@ curl -s -m 2 -H "Content-Type: application/json" \
 ## Debugging
 
 - `GET /` returns the session table as JSON. `POST /update` takes new firmware (see above).
-- The same hook JSON can be sent as one line over USB serial (115200 baud). Other serial commands: `state` prints the table, `setup` opens setup, `test` shows colour bars for 20 seconds, `inv0`/`inv1` toggle colour inversion.
+- The same hook JSON can be sent as one line over USB serial (115200 baud). Other serial commands: `state` prints the table, `wifi` prints the connection status and why joining last failed, `setup` opens setup, `test` shows colour bars for 20 seconds, `inv0`/`inv1` toggle colour inversion.
 - Opening the serial port with DTR/RTS asserted resets the board and clears the session list.
 
 The firmware streams each request body through an ArduinoJson filter rather than buffering it, so large `PostToolUse` payloads (hundreds of KB of tool output) don't exhaust RAM.
