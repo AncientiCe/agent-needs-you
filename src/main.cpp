@@ -6,6 +6,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
+#include <Update.h>
 #include <ArduinoJson.h>
 #include <Arduino_GFX_Library.h>
 #include <U8g2lib.h>
@@ -452,18 +453,90 @@ static void sendStateJson(Print &out) {
   serializeJson(doc, out);
 }
 
+// ---------------------------------------------------------------- update
+
+static const char *updatePassword() {
+#ifdef UPDATE_PASSWORD
+  return UPDATE_PASSWORD;
+#else
+  return "";
+#endif
+}
+
+static void drawUpdating(int pct) {
+  gfx->fillScreen(C_BLACK);
+  drawFace(gfx, MOOD_FOCUSED, FACE_X, FACE_Y, C_WORKING, 0);
+  text(u8g2_font_fub25_tr, "Updating", PANEL_X, 72, C_WORKING);
+  char t[16];
+  snprintf(t, sizeof(t), "%d%%", pct);
+  text(u8g2_font_fur17_tr, t, PANEL_X, 110, C_WHITE);
+  text(u8g2_font_fur14_tr, "keep it powered", PANEL_X, 184, C_DIM);
+  gfx->flush();
+}
+
+static void httpStatus(WiFiClient &c, const char *status, const char *body) {
+  c.printf("HTTP/1.1 %s\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: %u\r\n\r\n%s",
+           status, (unsigned)strlen(body), body);
+}
+
+// POST /update with the firmware .bin as the body and the update password in
+// X-Update-Password. The image goes to the spare OTA slot; the board only
+// boots it once it has been written and verified, then restarts.
+static void handleUpdate(WiFiClient &c, size_t len, const String &password, bool expectContinue) {
+  const char *want = updatePassword();
+  if (!*want) { httpStatus(c, "403 Forbidden", "no update password set\n"); return; }
+  if (password != want) { httpStatus(c, "401 Unauthorized", "wrong update password\n"); return; }
+  if (!len) { httpStatus(c, "411 Length Required", "send the firmware with a Content-Length\n"); return; }
+  if (!Update.begin(len, U_FLASH)) { httpStatus(c, "413 Payload Too Large", Update.errorString()); return; }
+  if (expectContinue) c.print("HTTP/1.1 100 Continue\r\n\r\n");
+  Serial.printf("update: %u bytes\n", (unsigned)len);
+  c.setTimeout(5000);
+  static uint8_t buf[4096];
+  size_t done = 0;
+  int shown = -1;
+  while (done < len) {
+    size_t n = c.readBytes(buf, min(sizeof(buf), len - done));
+    if (n == 0 || Update.write(buf, n) != n) break;
+    done += n;
+    int pct = done * 100 / len;
+    if (pct / 5 != shown) { shown = pct / 5; drawUpdating(pct); }
+  }
+  if (done < len || !Update.end()) {
+    Update.abort();
+    Serial.printf("update failed: %s\n", Update.errorString());
+    httpStatus(c, "500 Internal Server Error", done < len ? "upload cut short\n" : Update.errorString());
+    dirty = true;
+    return;
+  }
+  httpStatus(c, "200 OK", "updated, restarting\n");
+  c.flush();
+  c.stop();
+  Serial.println("update ok, restarting");
+  delay(200);
+  ESP.restart();
+}
+
+// ---------------------------------------------------------------- http
+
 static void handleHttp() {
   WiFiClient c = server.available();
   if (!c) return;
   c.setTimeout(1000);
   String req = c.readStringUntil('\n');
   bool expectContinue = false;
+  size_t contentLength = 0;
+  String password;
   while (c.connected()) {
     String h = c.readStringUntil('\n');
     h.trim();
     if (h.length() == 0) break;
-    h.toLowerCase();
-    if (h.startsWith("expect:") && h.indexOf("100-continue") > 0) expectContinue = true;
+    String name = h.substring(0, h.indexOf(':') + 1);
+    String value = h.substring(name.length());
+    name.toLowerCase();
+    value.trim();
+    if (name == "expect:" && value.indexOf("100-continue") >= 0) expectContinue = true;
+    else if (name == "content-length:") contentLength = value.toInt();
+    else if (name == "x-update-password:") password = value;
   }
 
   if (req.startsWith("POST /hook")) {
@@ -474,6 +547,8 @@ static void handleHttp() {
                 : "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
     if (!err) handleEvent(doc);
     else Serial.printf("bad hook json: %s\n", err.c_str());
+  } else if (req.startsWith("POST /update")) {
+    handleUpdate(c, contentLength, password, expectContinue);
   } else if (req.startsWith("GET / ")) {
     c.print("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n");
     sendStateJson(c);
