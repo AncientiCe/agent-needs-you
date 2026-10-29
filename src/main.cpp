@@ -591,8 +591,8 @@ static void handleHttp() {
 static uint8_t lastDisconnect = 0;  // why joining the network last failed
 
 static void printWifi() {
-  Serial.printf("network \"%s\" password length %u status %d ip %s rssi %d setup %s last failure %u (%s)\n", cfg.ssid, WiFi.status(),
-                (unsigned)strlen(cfg.pass), WiFi.localIP().toString().c_str(), WiFi.RSSI(), setupActive ? apName : "off", lastDisconnect,
+  Serial.printf("network \"%s\" password length %u status %d ip %s rssi %d setup %s last failure %u (%s)\n", cfg.ssid,
+                (unsigned)strlen(cfg.pass), WiFi.status(), WiFi.localIP().toString().c_str(), WiFi.RSSI(), setupActive ? apName : "off", lastDisconnect,
                 WiFi.disconnectReasonName((wifi_err_reason_t)lastDisconnect));
 }
 
