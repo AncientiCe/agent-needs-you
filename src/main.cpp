@@ -7,17 +7,16 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <Update.h>
+#include <Preferences.h>
 #include <ArduinoJson.h>
 #include <Arduino_GFX_Library.h>
 #include <U8g2lib.h>
 
 #include "face.h"
 
+// Optional build-time defaults; settings saved on the board win.
 #if __has_include("secrets.h")
 #include "secrets.h"
-#define HAVE_WIFI 1
-#else
-#define HAVE_WIFI 0
 #endif
 
 // ---- Pins (LilyGO T-Display S3 AMOLED pins_config.h) ----
@@ -77,6 +76,15 @@ Arduino_RM67162 *panel = new Arduino_RM67162(bus, PIN_LCD_RST, 1 /* landscape */
 Arduino_Canvas *gfx = new Arduino_Canvas(W, H, panel);
 
 WiFiServer server(80);
+
+// Wi-Fi and update settings, kept in NVS so a board can be set up without
+// rebuilding. Any secrets.h values are the defaults until something is saved.
+struct Config {
+  char ssid[33];
+  char pass[65];
+  uint32_t ip, gateway, subnet;  // all 0 = DHCP
+  char updatePass[33];
+} cfg;
 
 enum State : uint8_t { ST_IDLE, ST_WORKING, ST_DONE, ST_NEEDS };
 
@@ -382,7 +390,7 @@ static void draw() {
       text(u8g2_font_fur17_tr, "no sessions", PANEL_X + dx, 110 + dy, C_DIM);
       text(u8g2_font_fur14_tr, WiFi.localIP().toString().c_str(), PANEL_X + dx, 184 + dy, C_DIM);
     } else {
-      text(u8g2_font_fur17_tr, HAVE_WIFI ? "wifi..." : "no wifi config", PANEL_X + dx, 110 + dy, C_DIM);
+      text(u8g2_font_fur17_tr, cfg.ssid[0] ? "wifi..." : "no wifi config", PANEL_X + dx, 110 + dy, C_DIM);
       text(u8g2_font_fur14_tr, "serial ok", PANEL_X + dx, 184 + dy, C_DIM);
     }
     gfx->flush();
@@ -455,13 +463,7 @@ static void sendStateJson(Print &out) {
 
 // ---------------------------------------------------------------- update
 
-static const char *updatePassword() {
-#ifdef UPDATE_PASSWORD
-  return UPDATE_PASSWORD;
-#else
-  return "";
-#endif
-}
+static const char *updatePassword() { return cfg.updatePass; }
 
 static void drawUpdating(int pct) {
   gfx->fillScreen(C_BLACK);
@@ -610,20 +612,56 @@ static void handleButtons() {
 
 // ---------------------------------------------------------------- wifi
 
+static void loadConfig() {
+  memset(&cfg, 0, sizeof(cfg));
+#ifdef WIFI_SSID
+  copyStr(cfg.ssid, sizeof(cfg.ssid), WIFI_SSID);
+  copyStr(cfg.pass, sizeof(cfg.pass), WIFI_PASS);
+#endif
+#ifdef STATIC_IP
+  cfg.ip = IPAddress(STATIC_IP);
+  cfg.gateway = IPAddress(STATIC_GATEWAY);
+  cfg.subnet = IPAddress(STATIC_SUBNET);
+#endif
+#ifdef UPDATE_PASSWORD
+  copyStr(cfg.updatePass, sizeof(cfg.updatePass), UPDATE_PASSWORD);
+#endif
+  Preferences p;
+  if (!p.begin("anu", true)) return;  // nothing saved yet
+  if (p.isKey("ssid")) {
+    p.getString("ssid", cfg.ssid, sizeof(cfg.ssid));
+    p.getString("pass", cfg.pass, sizeof(cfg.pass));
+    cfg.ip = p.getUInt("ip");
+    cfg.gateway = p.getUInt("gateway");
+    cfg.subnet = p.getUInt("subnet");
+  }
+  if (p.isKey("updatePass")) p.getString("updatePass", cfg.updatePass, sizeof(cfg.updatePass));
+  p.end();
+}
+
+static void saveConfig() {
+  Preferences p;
+  p.begin("anu", false);
+  p.putString("ssid", cfg.ssid);
+  p.putString("pass", cfg.pass);
+  p.putUInt("ip", cfg.ip);
+  p.putUInt("gateway", cfg.gateway);
+  p.putUInt("subnet", cfg.subnet);
+  p.putString("updatePass", cfg.updatePass);
+  p.end();
+}
+
 static void wifiBegin() {
-#if HAVE_WIFI
+  if (!cfg.ssid[0]) return;
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOSTNAME);
-#ifdef STATIC_IP
-  WiFi.config(IPAddress(STATIC_IP), IPAddress(STATIC_GATEWAY), IPAddress(STATIC_SUBNET), IPAddress(STATIC_GATEWAY));
-#endif
+  if (cfg.ip) WiFi.config(IPAddress(cfg.ip), IPAddress(cfg.gateway), IPAddress(cfg.subnet), IPAddress(cfg.gateway));
   WiFi.setSleep(false);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-#endif
+  WiFi.begin(cfg.ssid, cfg.pass);
 }
 
 static void wifiLoop() {
-#if HAVE_WIFI
+  if (!cfg.ssid[0]) return;
   static bool up = false;
   static uint32_t lastTry = 0;
   bool now = WiFi.status() == WL_CONNECTED;
@@ -638,7 +676,6 @@ static void wifiLoop() {
     WiFi.reconnect();
   }
   up = now;
-#endif
 }
 
 // ---------------------------------------------------------------- main
@@ -661,6 +698,7 @@ void setup() {
   Serial.printf("psram %u free\n", ESP.getFreePsram());
   gfx->fillScreen(C_BLACK);
   gfx->flush();
+  loadConfig();
   wifiBegin();
   Serial.println("claude-light ready");
 }
