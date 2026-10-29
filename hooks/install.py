@@ -65,8 +65,15 @@ def python_path():
     return Path(exe).as_posix()
 
 
-def hook_command(relay, agent, url):
+def hook_command(relay, agent, url, codex_shell="powershell"):
     py = python_path()
+    if sys.platform == "win32" and agent == "codex" and codex_shell == "powershell":
+        # Codex runs hooks in the session's shell. A quoted path alone is a
+        # string in PowerShell; the call operator is required to execute it.
+        def quote(value):
+            return "'" + value.replace("'", "''") + "'"
+
+        return f"& {quote(py)} -S {quote(relay.as_posix())} --agent {agent} --url {quote(url)}"
     return f'"{py}" -S "{relay.as_posix()}" --agent {agent} --url {url}'
 
 
@@ -186,6 +193,8 @@ def main():
     p.add_argument("--ip", help="board IP address, e.g. 192.168.2.141")
     p.add_argument("--url", help="full hook URL (instead of --ip)")
     p.add_argument("--agents", help="comma-separated: claude,cursor,codex (default: every one found)")
+    p.add_argument("--codex-shell", choices=("powershell", "cmd"), default="powershell",
+                   help="Codex session shell on Windows (default: powershell)")
     p.add_argument("--uninstall", action="store_true", help="remove Agent Needs You hooks")
     p.add_argument("--dry-run", action="store_true", help="report what would change, write nothing")
     p.add_argument("--home", type=Path, default=Path.home(), help=argparse.SUPPRESS)
@@ -218,7 +227,7 @@ def main():
     for name in names:
         dirname, filename, updater = AGENTS[name]
         path = args.home / dirname / filename
-        command = None if args.uninstall else hook_command(relay, name, url)
+        command = None if args.uninstall else hook_command(relay, name, url, args.codex_shell)
         print(f"{name:7} {path}: {apply(path, updater, command, args.dry_run)}")
 
     if not args.uninstall:

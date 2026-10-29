@@ -59,6 +59,8 @@ Hooks call the Python that ran the installer (or the system Python, if run from 
 
 Options: `--agents claude,cursor,codex` to pick agents, `--dry-run` to see what would change, `--uninstall` to remove the hooks. Run it on each computer whose agents should report to the board.
 
+On Windows, Codex runs hooks in its session shell. The installer generates PowerShell commands by default; use `--codex-shell cmd` if your Codex session uses Command Prompt. Reinstalling replaces older commands that fail to launch in PowerShell; review and trust the changed Codex hooks afterward.
+
 The installer copies [`hooks/relay.py`](hooks/relay.py) to `~/.claude-light/` and adds one hook per event to `~/.claude/settings.json`, `~/.cursor/hooks.json` and `~/.codex/hooks.json`. Existing hooks are kept, earlier Agent Needs You hooks are replaced, and each changed file is backed up next to itself (`*.bak-claude-light-<timestamp>`).
 
 The relay converts each agent's hook payload to the board's format, posts it with a one-second timeout, prints whatever the agent expects from a hook, and always exits 0. If the board is off, hooks carry on normally.

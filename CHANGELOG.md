@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows Codex hooks now use PowerShell's call operator so quoted Python paths execute instead of producing parser errors. Added `--codex-shell cmd` for Command Prompt sessions and a Windows execution regression test.
+
 ### Documentation
 
 - Documented the Codex desktop pending-question limitation ([#1](https://github.com/AncientiCe/agent-needs-you/issues/1)): permission prompts show needs you, but unanswered asynchronous questions are not tracked reliably by the current relay.

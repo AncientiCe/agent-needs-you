@@ -42,6 +42,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Compile
         run: python -m py_compile hooks/install.py hooks/relay.py
+      - name: Hook command regression tests
+        run: python -m unittest discover -s hooks -p "test_*.py"
       - name: Install and uninstall into a scratch home
         shell: bash
         run: |
