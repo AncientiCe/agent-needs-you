@@ -591,8 +591,8 @@ static void handleHttp() {
 static uint8_t lastDisconnect = 0;  // why joining the network last failed
 
 static void printWifi() {
-  Serial.printf("network \"%s\" status %d ip %s rssi %d setup %s last failure %u (%s)\n", cfg.ssid, WiFi.status(),
-                WiFi.localIP().toString().c_str(), WiFi.RSSI(), setupActive ? apName : "off", lastDisconnect,
+  Serial.printf("network \"%s\" password length %u status %d ip %s rssi %d setup %s last failure %u (%s)\n", cfg.ssid, WiFi.status(),
+                (unsigned)strlen(cfg.pass), WiFi.localIP().toString().c_str(), WiFi.RSSI(), setupActive ? apName : "off", lastDisconnect,
                 WiFi.disconnectReasonName((wifi_err_reason_t)lastDisconnect));
 }
 
@@ -720,7 +720,8 @@ static void setupForm() {
   h += htmlEscape(cfg.ssid);
   h += F("\"><datalist id=nets>");
   h += scanned;
-  h += F("</datalist><label>Wi-Fi password</label><input name=pass type=password maxlength=64>"
+  h += F("</datalist><label>Wi-Fi password</label><input name=pass id=pass type=password maxlength=64 autocapitalize=off autocorrect=off>"
+         "<label><input type=checkbox style=width:auto onclick=\"pass.type=this.checked?'text':'password'\"> show password</label>"
          "<label>Fixed IP <small>(optional, e.g. 192.168.1.50; blank: the router picks one)</small></label>"
          "<input name=ip autocapitalize=off autocorrect=off value=\"");
   h += ipField(cfg.ip);
