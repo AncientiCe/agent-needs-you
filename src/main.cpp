@@ -38,6 +38,7 @@
 
 #define HOSTNAME "claude-light"
 #define SETUP_AFTER_MS (60UL * 1000)        // no Wi-Fi this long after boot: open setup
+#define SETUP_HOLD_MS 5000                   // hold the R button this long to open setup
 #define SETUP_RESTART_MS (10UL * 60 * 1000)  // setup unused this long: restart and retry
 #define MAX_SESSIONS 8
 #define WORKING_STALE_MS (30UL * 60 * 1000)
@@ -97,6 +98,7 @@ char apName[24];
 DNSServer dns;
 WebServer setupWeb(80);
 String scanned;  // <option>s of nearby networks for the form
+static void setupStart();
 
 enum State : uint8_t { ST_IDLE, ST_WORKING, ST_DONE, ST_NEEDS };
 
@@ -390,7 +392,7 @@ static void draw() {
   int f = currentFocus();
   gfx->fillScreen(C_BLACK);
 
-  if (setupActive && f < 0) {
+  if (setupActive) {
     drawFace(gfx, MOOD_CURIOUS, FACE_X, FACE_Y, C_NEEDS, 0);
     text(u8g2_font_fub25_tr, "Setup", PANEL_X, 52, C_NEEDS);
     text(u8g2_font_fur14_tr, "On your phone, join", PANEL_X, 92, C_DIM);
@@ -594,6 +596,7 @@ static void handleSerial() {
   if (line == "state") { sendStateJson(Serial); Serial.println(); return; }
   // Display tuning: inv0/inv1 colour inversion, test pattern.
   if (line == "inv0" || line == "inv1") { panel->invertDisplay(line == "inv1"); Serial.println(line); return; }
+  if (line == "setup") { setupStart(); return; }
   if (line == "test") { testPattern = millis(); Serial.println("test"); return; }
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, line, DeserializationOption::Filter(hookFilter()));
@@ -619,6 +622,8 @@ static bool pressed(Button &b) {
 }
 
 static void handleButtons() {
+  // Holding R opens setup, e.g. to move the board to another network.
+  if (!btnR.last && millis() - btnR.at > SETUP_HOLD_MS && !setupActive) setupStart();
   if (pressed(btnL)) {
     for (auto &s : sessions)
       if (s.used && s.st == ST_DONE) s.acked = true;
@@ -749,6 +754,8 @@ static void setupSave() {
 
 static void setupStart() {
   if (setupActive) return;
+  server.stop();
+  MDNS.end();
   // Stop retrying the saved network: the access point has to stay on one
   // channel, and joining would pull it elsewhere under the phone.
   WiFi.disconnect();
