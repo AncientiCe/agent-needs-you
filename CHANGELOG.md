@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-29
+
 ### Added
 
 - **Setup without a computer.** A board without Wi-Fi settings opens an access point (`AgentNeedsYou-XXXX`) and shows how to join it. The setup page takes the network, an optional static IP and an update password, and keeps them on the board. Hold the right-hand button for five seconds to open setup again. `secrets.h` is now optional and only provides defaults.
@@ -54,7 +56,8 @@ First release: a desk status light that shows when an AI coding agent needs you.
 - **Hook installer** (`hooks/install.py`) for Claude Code, Cursor and Codex on Windows, macOS and Linux, Python 3.8+ with the standard library only. It runs without a clone (`curl … | python3 -` or `irm … | python -`), keeps existing hooks, replaces earlier Claude Needs You hooks, backs up each changed file, and supports `--agents`, `--dry-run` and `--uninstall`. Run from a virtualenv, it points the hooks at the system Python.
 - **Relay** (`hooks/relay.py`) that converts each agent's hook payload to the board's format with a one-second timeout and always exits 0, so agents carry on when the board is off.
 
-[Unreleased]: https://github.com/AncientiCe/agent-needs-you/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/AncientiCe/agent-needs-you/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/AncientiCe/agent-needs-you/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AncientiCe/agent-needs-you/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AncientiCe/agent-needs-you/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AncientiCe/agent-needs-you/releases/tag/v0.1.0
