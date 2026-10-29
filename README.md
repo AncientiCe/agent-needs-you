@@ -26,18 +26,49 @@ The screen rotates through the sessions, most urgent first (needs you > working 
 
 LilyGO T-Display S3 AMOLED (ESP32-S3R8, 16 MB flash, 8 MB PSRAM, RM67162 240x536 over QSPI). Powered over USB.
 
+## Setting up a board
+
+A board without Wi-Fi settings starts in setup and shows how to connect:
+
+1. On a phone or laptop, join the open Wi-Fi network shown on the screen (`AgentNeedsYou-XXXX`).
+2. The setup page usually opens by itself; if not, go to `http://192.168.4.1`.
+3. Pick your network, enter its password, and optionally a static IP (with gateway and subnet mask) and an update password. Save.
+
+The board restarts, joins your network and shows its IP on the idle screen. Use that IP for the hooks below. A static IP, or an address reserved for the board in your router, keeps the hooks pointing at the right place.
+
+To change networks later, hold the right-hand button for five seconds (or send `setup` over serial). If the saved network can't be reached within a minute of boot, setup opens by itself. When nobody uses it for ten minutes, the board restarts and tries the saved network again.
+
 ## Build and flash
 
 Needs [PlatformIO](https://platformio.org/).
 
 ```bash
-cp include/secrets.h.example include/secrets.h   # then fill in Wi-Fi details
 pio run -t upload
 ```
 
-`include/secrets.h` is gitignored. Set `STATIC_IP` there (or reserve the address in your router) so the hooks always find the board. The upload port in `platformio.ini` is `COM4`; change it for your machine.
+The upload port in `platformio.ini` is `COM4`; change it for your machine. A board flashed this way starts in setup. To build your settings in instead, copy `include/secrets.h.example` to `include/secrets.h` (gitignored) and fill it in. Settings saved in setup take priority over `secrets.h`.
 
 After boot the board prints `wifi up: http://<ip>/` over serial and shows the IP on its idle screen.
+
+Each [release](https://github.com/AncientiCe/agent-needs-you/releases) has two firmware images: `*-full.bin` for a new board (flash it at offset `0x0`, e.g. `esptool.py --chip esp32s3 write_flash 0x0 agent-needs-you-<version>-full.bin`) and `*-update.bin` for updating over Wi-Fi.
+
+## Updating over Wi-Fi
+
+Once a board runs firmware with update support and has an update password (set in setup, or `UPDATE_PASSWORD` in `secrets.h`), it no longer needs USB for updates. Without an update password, the board refuses updates over Wi-Fi.
+
+From a clone:
+
+```bash
+ANU_HOST=<device-ip> ANU_UPDATE_PASSWORD=<password> pio run -e ota -t upload
+```
+
+Or with a release image and plain curl:
+
+```bash
+curl -fsS -H "X-Update-Password: <password>" --data-binary @agent-needs-you-<version>-update.bin http://<device-ip>/update
+```
+
+The board writes the image to its spare firmware slot, checks it and restarts into it. A broken or cut-short upload leaves the running firmware in place. The session list starts empty after the restart. The password travels unencrypted over your LAN, so treat it as a guard against accidents and neighbours, not as strong protection.
 
 ## Agent hooks
 
@@ -92,8 +123,8 @@ curl -s -m 2 -H "Content-Type: application/json" \
 
 ## Debugging
 
-- `GET /` returns the session table as JSON.
-- The same hook JSON can be sent as one line over USB serial (115200 baud). Other serial commands: `state` prints the table, `test` shows colour bars for 20 seconds, `inv0`/`inv1` toggle colour inversion.
+- `GET /` returns the session table as JSON. `POST /update` takes new firmware (see above).
+- The same hook JSON can be sent as one line over USB serial (115200 baud). Other serial commands: `state` prints the table, `setup` opens setup, `test` shows colour bars for 20 seconds, `inv0`/`inv1` toggle colour inversion.
 - Opening the serial port with DTR/RTS asserted resets the board and clears the session list.
 
 The firmware streams each request body through an ArduinoJson filter rather than buffering it, so large `PostToolUse` payloads (hundreds of KB of tool output) don't exhaust RAM.

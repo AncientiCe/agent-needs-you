@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Setup without a computer.** A board without Wi-Fi settings opens an access point (`AgentNeedsYou-XXXX`) and shows how to join it. The setup page takes the network, an optional static IP and an update password, and keeps them on the board. Hold the right-hand button for five seconds to open setup again. `secrets.h` is now optional and only provides defaults.
+- **Firmware updates over Wi-Fi.** `POST /update` with the update password installs new firmware without USB; `pio run -e ota -t upload` does it from a clone.
+- Releases include firmware images: a full image for new boards and an update image for running ones.
+
 ### Fixed
 
 - Windows Codex hooks now use PowerShell's call operator so quoted Python paths execute instead of producing parser errors. Added `--codex-shell cmd` for Command Prompt sessions and a Windows execution regression test.
