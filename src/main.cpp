@@ -8,6 +8,8 @@
 #include <ESPmDNS.h>
 #include <Update.h>
 #include <Preferences.h>
+#include <DNSServer.h>
+#include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Arduino_GFX_Library.h>
 #include <U8g2lib.h>
@@ -35,6 +37,8 @@
 #define H 240
 
 #define HOSTNAME "claude-light"
+#define SETUP_AFTER_MS (60UL * 1000)        // no Wi-Fi this long after boot: open setup
+#define SETUP_RESTART_MS (10UL * 60 * 1000)  // setup unused this long: restart and retry
 #define MAX_SESSIONS 8
 #define WORKING_STALE_MS (30UL * 60 * 1000)
 #define DONE_FADE_MS (15UL * 60 * 1000)
@@ -85,6 +89,14 @@ struct Config {
   uint32_t ip, gateway, subnet;  // all 0 = DHCP
   char updatePass[33];
 } cfg;
+
+// Setup portal: an open access point whose every page is the settings form.
+bool setupActive = false;
+uint32_t setupAt = 0;
+char apName[24];
+DNSServer dns;
+WebServer setupWeb(80);
+String scanned;  // <option>s of nearby networks for the form
 
 enum State : uint8_t { ST_IDLE, ST_WORKING, ST_DONE, ST_NEEDS };
 
@@ -378,6 +390,19 @@ static void draw() {
   int f = currentFocus();
   gfx->fillScreen(C_BLACK);
 
+  if (setupActive && f < 0) {
+    drawFace(gfx, MOOD_CURIOUS, FACE_X, FACE_Y, C_NEEDS, 0);
+    text(u8g2_font_fub25_tr, "Setup", PANEL_X, 52, C_NEEDS);
+    text(u8g2_font_fur14_tr, "On your phone, join", PANEL_X, 92, C_DIM);
+    gfx->setFont(u8g2_font_fur17_tr);
+    gfx->setTextColor(C_WHITE);
+    fitText(apName, PANEL_X, 120, PANEL_W);
+    text(u8g2_font_fur14_tr, "then open", PANEL_X, 160, C_DIM);
+    text(u8g2_font_fur17_tr, "192.168.4.1", PANEL_X, 188, C_WHITE);
+    gfx->flush();
+    return;
+  }
+
   if (f < 0) {
     // Nothing going on: the face sleeps. Everything drifts a little so the
     // AMOLED doesn't burn in.
@@ -651,8 +676,117 @@ static void saveConfig() {
   p.end();
 }
 
+// ---------------------------------------------------------------- setup
+
+static String htmlEscape(const String &in) {
+  String out;
+  for (char ch : in) {
+    if (ch == '&') out += "&amp;";
+    else if (ch == '<') out += "&lt;";
+    else if (ch == '>') out += "&gt;";
+    else if (ch == '"') out += "&quot;";
+    else out += ch;
+  }
+  return out;
+}
+
+static String ipField(uint32_t ip) { return ip ? IPAddress(ip).toString() : String(); }
+
+static void setupForm() {
+  String h;
+  h.reserve(3000);
+  h += F("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+         "<title>Agent Needs You setup</title><style>"
+         "body{font:16px system-ui,sans-serif;max-width:26em;margin:1.5em auto;padding:0 1em;background:#111;color:#eee}"
+         "h1{font-size:1.4em;color:#fdb000}label{display:block;margin:.9em 0 .2em}small{color:#999}"
+         "input{box-sizing:border-box;width:100%;padding:.55em;font:inherit;border-radius:6px;border:1px solid #555;background:#222;color:#eee}"
+         "button{margin-top:1.4em;width:100%;padding:.7em;font:inherit;font-weight:600;border:0;border-radius:6px;background:#fdb000;color:#111}"
+         "</style><h1>Agent Needs You</h1><form method=post action=/save>"
+         "<label>Wi-Fi network</label><input name=ssid list=nets required maxlength=32 value=\"");
+  h += htmlEscape(cfg.ssid);
+  h += F("\"><datalist id=nets>");
+  h += scanned;
+  h += F("</datalist><label>Wi-Fi password</label><input name=pass type=password maxlength=64>"
+         "<label>Static IP <small>(blank: let the router pick)</small></label><input name=ip inputmode=decimal value=\"");
+  h += ipField(cfg.ip);
+  h += F("\"><label>Gateway <small>(router address)</small></label><input name=gateway inputmode=decimal value=\"");
+  h += ipField(cfg.gateway);
+  h += F("\"><label>Subnet mask</label><input name=subnet inputmode=decimal placeholder=255.255.255.0 value=\"");
+  h += ipField(cfg.subnet);
+  h += F("\"><label>Update password <small>(for firmware updates over Wi-Fi; blank keeps the current one)</small></label>"
+         "<input name=update type=password maxlength=32><button>Save and restart</button></form>");
+  setupWeb.send(200, "text/html", h);
+}
+
+static void setupSave() {
+  String ssid = setupWeb.arg("ssid"), ip = setupWeb.arg("ip"), gw = setupWeb.arg("gateway"), sn = setupWeb.arg("subnet");
+  ssid.trim(); ip.trim(); gw.trim(); sn.trim();
+  IPAddress a, g, m(255, 255, 255, 0);
+  const char *err = nullptr;
+  if (ssid.isEmpty()) err = "Pick a Wi-Fi network.";
+  else if (ip.length() && !a.fromString(ip)) err = "The static IP isn't a valid address.";
+  else if (ip.length() && !g.fromString(gw)) err = "A static IP needs the gateway (router) address too.";
+  else if (ip.length() && sn.length() && !m.fromString(sn)) err = "The subnet mask isn't valid.";
+  if (err) {
+    setupWeb.send(400, "text/html", String(F("<meta name=viewport content='width=device-width'><p>")) + err +
+                                        F("</p><p><a href=/>Back</a>"));
+    return;
+  }
+  copyStr(cfg.ssid, sizeof(cfg.ssid), ssid.c_str());
+  copyStr(cfg.pass, sizeof(cfg.pass), setupWeb.arg("pass").c_str());
+  cfg.ip = ip.length() ? (uint32_t)a : 0;
+  cfg.gateway = ip.length() ? (uint32_t)g : 0;
+  cfg.subnet = ip.length() ? (uint32_t)m : 0;
+  if (setupWeb.arg("update").length()) copyStr(cfg.updatePass, sizeof(cfg.updatePass), setupWeb.arg("update").c_str());
+  saveConfig();
+  setupWeb.send(200, "text/html",
+                F("<meta name=viewport content='width=device-width'><p>Saved. The board is restarting and joining your "
+                  "network; its address shows on the screen.</p>"));
+  Serial.printf("setup saved for %s, restarting\n", cfg.ssid);
+  delay(500);
+  ESP.restart();
+}
+
+static void setupStart() {
+  if (setupActive) return;
+  // Stop retrying the saved network: the access point has to stay on one
+  // channel, and joining would pull it elsewhere under the phone.
+  WiFi.disconnect();
+  WiFi.mode(WIFI_AP_STA);
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  snprintf(apName, sizeof(apName), "AgentNeedsYou-%02X%02X", mac[4], mac[5]);
+  int n = WiFi.scanNetworks();
+  scanned = "";
+  for (int i = 0; i < n; i++) scanned += "<option value=\"" + htmlEscape(WiFi.SSID(i)) + "\">";
+  WiFi.scanDelete();
+  WiFi.softAP(apName);
+  dns.start(53, "*", WiFi.softAPIP());
+  setupWeb.on("/", HTTP_GET, setupForm);
+  setupWeb.on("/save", HTTP_POST, setupSave);
+  // Phones probe random URLs to detect a captive portal; send them all to the form.
+  setupWeb.onNotFound([] {
+    setupWeb.sendHeader("Location", "http://192.168.4.1/");
+    setupWeb.send(302, "text/plain", "");
+  });
+  setupWeb.begin();
+  setupActive = true;
+  setupAt = millis();
+  dirty = true;
+  Serial.printf("setup: join %s, open http://192.168.4.1/\n", apName);
+}
+
+static void setupLoop() {
+  if (!setupActive) return;
+  dns.processNextRequest();
+  setupWeb.handleClient();
+  // Saved settings that just didn't work (router down after a power cut?):
+  // go back to trying them every so often while nobody is setting up.
+  if (cfg.ssid[0] && WiFi.softAPgetStationNum() == 0 && millis() - setupAt > SETUP_RESTART_MS) ESP.restart();
+}
+
 static void wifiBegin() {
-  if (!cfg.ssid[0]) return;
+  if (!cfg.ssid[0]) { setupStart(); return; }
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOSTNAME);
   if (cfg.ip) WiFi.config(IPAddress(cfg.ip), IPAddress(cfg.gateway), IPAddress(cfg.subnet), IPAddress(cfg.gateway));
@@ -661,16 +795,20 @@ static void wifiBegin() {
 }
 
 static void wifiLoop() {
-  if (!cfg.ssid[0]) return;
+  if (setupActive) { setupLoop(); return; }
   static bool up = false;
   static uint32_t lastTry = 0;
+  static bool everUp = false;
   bool now = WiFi.status() == WL_CONNECTED;
+  everUp |= now;
   if (now && !up) {
     Serial.printf("wifi up: http://%s/  (%s.local)\n", WiFi.localIP().toString().c_str(), HOSTNAME);
     MDNS.begin(HOSTNAME);
     MDNS.addService("http", "tcp", 80);
     server.begin();
     dirty = true;
+  } else if (!now && !everUp && millis() > SETUP_AFTER_MS) {
+    setupStart();
   } else if (!now && millis() - lastTry > 15000) {
     lastTry = millis();
     WiFi.reconnect();
