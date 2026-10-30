@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Codex questions now show needs you ([#1](https://github.com/AncientiCe/agent-needs-you/issues/1)). An asynchronous question (`request_user_input_async`) keeps the session at needs you, with the question, until its answer reaches the session transcript, even while Codex keeps working. A blocking question (`request_user_input`) waits until its tool call returns; the installer adds a Codex `PreToolUse` hook for it, so reinstall and trust the new hook in Codex.
+
 ## [0.4.0] - 2026-10-29
 
 ### Added

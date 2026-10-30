@@ -15,6 +15,7 @@ Windows proxy lookup cost ~150 ms per call).
 """
 
 import json
+import os
 import socket
 import sys
 
@@ -31,6 +32,7 @@ EVENTS = {
     "codex": {
         "SessionStart": "SessionStart",
         "UserPromptSubmit": "UserPromptSubmit",
+        "PreToolUse": "PreToolUse",
         "PostToolUse": "PostToolUse",
         "PermissionRequest": "Notification",
         "Stop": "Stop",
@@ -47,6 +49,93 @@ EVENTS = {
         "sessionEnd": "SessionEnd",
     },
 }
+
+# Codex questions asked with request_user_input_async that have no answer yet,
+# by session: {"call", "path", "offset", "message"}. The tool returns at once
+# and the answer arrives later as a user message in the session transcript.
+QUESTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codex-questions.json")
+REPLY_MARK = b"send_user_message_question_reply"
+
+
+def load_questions():
+    try:
+        with open(QUESTIONS, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_questions(questions):
+    tmp = f"{QUESTIONS}.{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(questions, f)
+    os.replace(tmp, QUESTIONS)
+
+
+def question_text(data):
+    tool_input = data.get("tool_input") or {}
+    if isinstance(tool_input, str):
+        try:
+            tool_input = json.loads(tool_input)
+        except ValueError:
+            tool_input = {}
+    for q in tool_input.get("questions") or []:
+        text = q.get("title") or q.get("question") or q.get("header")
+        if text:
+            return "Codex asks: " + text
+    return "Codex has a question for you"
+
+
+def answered(asked):
+    """True once the transcript holds the reply to the asked question."""
+    try:
+        with open(asked["path"], "rb") as f:
+            f.seek(asked["offset"])
+            tail = f.read()
+    except OSError:
+        return True  # transcript gone: stop holding the session
+    call = asked["call"].encode("utf-8")
+    return any(REPLY_MARK in line and call in line for line in tail.splitlines())
+
+
+def codex_question(data, event, message):
+    """Report a Codex session as needs you while a question waits for an answer.
+
+    request_user_input blocks, so it waits from its PreToolUse until its
+    PostToolUse. request_user_input_async does not, so later events of the
+    session are reported as needs you until its answer reaches the transcript.
+    """
+    tool = data.get("tool_name")
+    if event == "PreToolUse" and tool == "request_user_input":
+        return "Notification", question_text(data)
+
+    session = str(data["session_id"])
+    questions = load_questions()
+    if event == "PostToolUse" and tool == "request_user_input_async":
+        path = data.get("transcript_path") or ""
+        try:
+            offset = os.path.getsize(path)
+        except OSError:
+            return "Notification", question_text(data)  # no transcript to watch
+        asked = questions[session] = {
+            "call": str(data.get("tool_use_id") or ""),
+            "path": path,
+            "offset": offset,
+            "message": question_text(data),
+        }
+        save_questions(questions)
+        return "Notification", asked["message"]
+
+    asked = questions.get(session)
+    if not asked:
+        return event, message
+    if data["hook_event_name"] in ("UserPromptSubmit", "Interrupt", "SessionEnd") or answered(asked):
+        del questions[session]
+        save_questions(questions)
+        return event, message
+    if event in ("PreToolUse", "PostToolUse", "Stop"):
+        return "Notification", asked["message"]
+    return event, message
 
 
 def normalise(agent, data):
@@ -67,6 +156,8 @@ def normalise(agent, data):
     if agent == "codex" and event == "Notification":
         tool = data.get("tool_name") or "a tool"
         message = "Codex needs your permission to use " + tool
+    if agent == "codex":
+        event, message = codex_question(data, event, message)
 
     out = {"hook_event_name": event, "session_id": str(session), "cwd": cwd}
     if message:

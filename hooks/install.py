@@ -40,6 +40,7 @@ CLAUDE_EVENTS = {
 CODEX_EVENTS = {
     "SessionStart": None,
     "UserPromptSubmit": None,
+    "PreToolUse": "request_user_input",
     "PostToolUse": "*",
     "PermissionRequest": "*",
     "Stop": None,
