@@ -44,15 +44,15 @@ void easeEye(Eye &e, const Eye &to, float k) {
 
 void drawEye(Arduino_GFX *g, float cx, float cy, const Eye &e, bool left, float open, float scale, uint16_t col) {
   float w = e.w * scale, h = e.h * scale * open;
-  if (h < 6) h = 6;
+  if (h < 6 * scale) h = 6 * scale;
   int x0 = cx - w / 2, y0 = cy - h / 2, iw = w, ih = h;
   int x1 = x0 + iw, y1 = y0 + ih;
-  int r = min(min(iw, ih) / 2, 28);
+  int r = min(min(iw, ih) / 2, (int)(28 * scale));
   g->fillRoundRect(x0, y0, iw, ih, r, col);
   // Top lid: everything above a (possibly slanted) line goes black.
   if (e.lidTop > 0.01f || fabsf(e.slant) > 0.5f) {
     float base = y0 + e.lidTop * ih;
-    int inner = base + e.slant / 2, outer = base - e.slant / 2;
+    int inner = base + e.slant * scale / 2, outer = base - e.slant * scale / 2;
     int yl = left ? outer : inner, yr = left ? inner : outer;
     g->fillTriangle(x0 - 2, y0 - 2, x1 + 2, y0 - 2, x0 - 2, yl, BLACK);
     g->fillTriangle(x1 + 2, y0 - 2, x1 + 2, yr, x0 - 2, yl, BLACK);
@@ -74,9 +74,10 @@ void sparkle(Arduino_GFX *g, int x, int y, int s, uint16_t col) {
   g->fillTriangle(x + s, y, x, y - t, x, y + t, col);
 }
 
-void sweatDrop(Arduino_GFX *g, int x, int y, uint16_t col) {
-  g->fillCircle(x, y, 7, col);
-  g->fillTriangle(x - 7, y - 2, x + 7, y - 2, x, y - 17, col);
+void sweatDrop(Arduino_GFX *g, int x, int y, float size, uint16_t col) {
+  int r = 7 * size;
+  g->fillCircle(x, y, r, col);
+  g->fillTriangle(x - r, y - 2 * size, x + r, y - 2 * size, x, y - 17 * size, col);
 }
 
 void text(Arduino_GFX *g, const uint8_t *font, const char *s, int x, int y, uint16_t col) {
@@ -88,7 +89,8 @@ void text(Arduino_GFX *g, const uint8_t *font, const char *s, int x, int y, uint
 
 }  // namespace
 
-void drawFace(Arduino_GFX *g, Mood mood, int cx, int cy, uint16_t col, float pop) {
+void drawFace(Arduino_GFX *g, Mood mood, int cx, int cy, uint16_t col, float pop, float size) {
+  bool small = size < 0.7f;  // swap in smaller fonts
   uint32_t t = millis();
   Eye l = {0, 0, 78, 96, 0, 0, 0, 0}, r = l;
   float bob = 0;  // whole-face vertical offset, not eased
@@ -156,34 +158,37 @@ void drawFace(Arduino_GFX *g, Mood mood, int cx, int cy, uint16_t col, float pop
     uint32_t dur = mood == MOOD_DROWSY ? 450 : 160, d = t - blinkAt;
     if (d < dur) open = max(0.05f, fabsf(1 - 2.0f * d / dur));
   }
-  float scale = pop > 0 ? 1 + 0.22f * sinf(PI * pop) : 1;
-  float y = cy + bob;
+  float scale = (pop > 0 ? 1 + 0.22f * sinf(PI * pop) : 1) * size;
+  float y = cy + bob * size;
 
   if (mood == MOOD_HAPPY) {  // blush under the eyes, bouncing with them
     uint16_t blush = mix565(BLUSH_PINK, BLACK, 0.35f);
-    g->fillEllipse(cx - EYE_GAP - 8, y + 50, 18, 9, blush);
-    g->fillEllipse(cx + EYE_GAP + 8, y + 50, 18, 9, blush);
+    g->fillEllipse(cx - (EYE_GAP + 8) * size, y + 50 * size, 18 * size, 9 * size, blush);
+    g->fillEllipse(cx + (EYE_GAP + 8) * size, y + 50 * size, 18 * size, 9 * size, blush);
   }
 
-  drawEye(g, cx - EYE_GAP + curL.dx, y + curL.dy, curL, true, open, scale, col);
-  drawEye(g, cx + EYE_GAP + curR.dx, y + curR.dy, curR, false, open, scale, col);
+  drawEye(g, cx + (curL.dx - EYE_GAP) * size, y + curL.dy * size, curL, true, open, scale, col);
+  drawEye(g, cx + (curR.dx + EYE_GAP) * size, y + curR.dy * size, curR, false, open, scale, col);
 
   switch (mood) {
     case MOOD_SLEEPY:  // z, z, Z drifting up and fading out
       for (int i = 0; i < 3; i++) {
         float p = phase(t + i * 1200, 3600);
-        const uint8_t *font = p < 0.35f ? u8g2_font_fub11_tr : p < 0.7f ? u8g2_font_fub14_tr : u8g2_font_fub20_tr;
-        text(g, font, p < 0.7f ? "z" : "Z", cx + 92 + p * 34 + 6 * sinf(p * 2 * PI), cy - 34 - p * 70,
+        const uint8_t *font = small ? (p < 0.7f ? u8g2_font_5x7_tr : u8g2_font_6x12_tr)
+                              : p < 0.35f ? u8g2_font_fub11_tr : p < 0.7f ? u8g2_font_fub14_tr : u8g2_font_fub20_tr;
+        text(g, font, p < 0.7f ? "z" : "Z", cx + (92 + p * 34 + 6 * sinf(p * 2 * PI)) * size, cy - (34 + p * 70) * size,
              mix565(col, BLACK, p * p));
       }
       break;
     case MOOD_CURIOUS:
-      text(g, u8g2_font_fub25_tr, "?", cx + 112 + 3 * sinf(2 * PI * phase(t, 900)),
-           cy - 58 + 6 * sinf(2 * PI * phase(t, 1300)), col);
+      text(g, small ? u8g2_font_fub11_tr : u8g2_font_fub25_tr, "?", cx + (112 + 3 * sinf(2 * PI * phase(t, 900))) * size,
+           cy + (-58 + 6 * sinf(2 * PI * phase(t, 1300))) * size, col);
       break;
     case MOOD_FOCUSED: {  // a bead of sweat now and then
       float p = phase(t, 9000) * 9000 / 1800;
-      if (p < 1) sweatDrop(g, cx + EYE_GAP + 52, cy - 44 + p * 44, mix565(SWEAT_BLUE, BLACK, p > 0.7f ? (p - 0.7f) / 0.3f : 0));
+      if (p < 1)
+        sweatDrop(g, cx + (EYE_GAP + 52) * size, cy - (44 - p * 44) * size, size,
+                  mix565(SWEAT_BLUE, BLACK, p > 0.7f ? (p - 0.7f) / 0.3f : 0));
       break;
     }
     case MOOD_HAPPY: {
@@ -191,7 +196,7 @@ void drawFace(Arduino_GFX *g, Mood mood, int cx, int cy, uint16_t col, float pop
       static const uint16_t cols[] = {WHITE, SPARKLE_YELLOW, WHITE, SPARKLE_YELLOW, WHITE, SPARKLE_YELLOW};
       for (int i = 0; i < 6; i++) {
         float p = phase(t + i * 410, 1500);
-        if (p < 0.6f) sparkle(g, cx + spots[i][0], cy + spots[i][1], 13 * sinf(PI * p / 0.6f), cols[i]);
+        if (p < 0.6f) sparkle(g, cx + spots[i][0] * size, cy + spots[i][1] * size, 13 * size * sinf(PI * p / 0.6f), cols[i]);
       }
       break;
     }

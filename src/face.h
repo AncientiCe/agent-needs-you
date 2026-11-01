@@ -17,5 +17,6 @@ uint16_t mix565(uint16_t a, uint16_t b, float t);
 
 // Draws the eyes centred on (cx, cy) over a black background. Call it every
 // frame: the face eases between moods and blinks by itself. `pop` runs from
-// 1 down to 0 right after the state changes and makes the eyes boing.
-void drawFace(Arduino_GFX *g, Mood mood, int cx, int cy, uint16_t col, float pop);
+// 1 down to 0 right after the state changes and makes the eyes boing. At
+// `size` 1 the face is about 290 x 230 px; smaller sizes shrink everything.
+void drawFace(Arduino_GFX *g, Mood mood, int cx, int cy, uint16_t col, float pop, float size = 1);

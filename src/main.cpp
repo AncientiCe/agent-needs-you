@@ -1,7 +1,8 @@
 // Agent Needs You — desk status light for AI coding agents.
 // LilyGO T-Display S3 AMOLED (ESP32-S3, RM67162 240x536 over QSPI, used
-// landscape). Claude Code hooks POST their raw stdin JSON to /hook; the same
-// JSON lines are accepted over USB serial.
+// landscape), or with BOARD_TQT_PRO the LilyGO T-QT Pro (ESP32-S3, GC9107
+// 128x128 over SPI). Claude Code hooks POST their raw stdin JSON to /hook;
+// the same JSON lines are accepted over USB serial.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -21,6 +22,23 @@
 #include "secrets.h"
 #endif
 
+#if defined(BOARD_TQT_PRO)
+// ---- Pins (LilyGO T-QT Pro, TFT_eSPI Setup211_LilyGo_T_QT_Pro_S3.h) ----
+#define PIN_LCD_DC 6
+#define PIN_LCD_CS 5
+#define PIN_LCD_SCK 3
+#define PIN_LCD_MOSI 2
+#define PIN_LCD_RST 1
+#define PIN_LCD_EN 10  // backlight
+#define LCD_EN_ON LOW
+#define PIN_BTN_L 0
+#define PIN_BTN_R 47
+
+#define W 128
+#define H 128
+
+#define HOSTNAME "claude-light-qt"
+#else
 // ---- Pins (LilyGO T-Display S3 AMOLED pins_config.h) ----
 #define PIN_LCD_CS 6
 #define PIN_LCD_SCK 47
@@ -30,6 +48,7 @@
 #define PIN_LCD_D3 5
 #define PIN_LCD_RST 17
 #define PIN_LCD_EN 38  // panel power enable (status LED on v1 boards)
+#define LCD_EN_ON HIGH
 #define PIN_BTN_L 0
 #define PIN_BTN_R 21
 
@@ -37,6 +56,7 @@
 #define H 240
 
 #define HOSTNAME "claude-light"
+#endif
 #define SETUP_AFTER_MS (60UL * 1000)        // no Wi-Fi this long after boot: open setup
 #define SETUP_HOLD_MS 5000                   // hold the R button this long to open setup
 #define SETUP_RESTART_MS (10UL * 60 * 1000)  // setup unused this long: restart and retry
@@ -60,11 +80,21 @@
 #define FRAME_IDLE_MS 50
 #define POP_MS 600  // eyes boing for this long after a state change
 
+#if defined(BOARD_TQT_PRO)
+// ---- Layout: state on top, eyes in the middle, project and counts below ----
+#define COMPACT 1
+#define FACE_X 64
+#define FACE_Y 62
+#define FACE_SIZE 0.45f
+#else
 // ---- Layout: eyes on the left, text panel on the right ----
+#define COMPACT 0
 #define FACE_X 150
 #define FACE_Y 120
+#define FACE_SIZE 1.0f
 #define PANEL_X 306
 #define PANEL_W (W - PANEL_X - 12)
+#endif
 
 // ---- Colours (RGB565), bright accents on AMOLED black ----
 #define C_BLACK 0x0000
@@ -76,8 +106,13 @@
 #define C_IDLE 0x7BD4
 #define C_DIM 0x6B6D
 
+#if defined(BOARD_TQT_PRO)
+Arduino_DataBus *bus = new Arduino_ESP32SPI(PIN_LCD_DC, PIN_LCD_CS, PIN_LCD_SCK, PIN_LCD_MOSI, GFX_NOT_DEFINED);
+Arduino_GC9107 *panel = new Arduino_GC9107(bus, PIN_LCD_RST, 0, true /* IPS */);
+#else
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(PIN_LCD_CS, PIN_LCD_SCK, PIN_LCD_D0, PIN_LCD_D1, PIN_LCD_D2, PIN_LCD_D3);
 Arduino_RM67162 *panel = new Arduino_RM67162(bus, PIN_LCD_RST, 1 /* landscape */);
+#endif
 Arduino_Canvas *gfx = new Arduino_Canvas(W, H, panel);
 
 WiFiServer server(80);
@@ -282,17 +317,33 @@ static void text(const uint8_t *font, const char *t, int x, int y, uint16_t col)
   gfx->print(t);
 }
 
-// Prints `t` at (x, y) in the current font, cut short with "..." to fit maxW.
-static void fitText(const char *t, int x, int y, int maxW) {
-  char buf[104];
-  copyStr(buf, sizeof(buf), t);
+// Copies `t` into buf (104 bytes), cut short with "..." to fit maxW in the
+// current font.
+static void fitInto(char *buf, const char *t, int maxW) {
+  copyStr(buf, 104, t);
   int n = strlen(buf);
   while (n > 0 && textWidth(buf) > maxW) {
     n--;
     copyStr(buf, n + 1, t);
     strcat(buf, "...");
   }
+}
+
+// Prints `t` at (x, y) in the current font, cut short with "..." to fit maxW.
+static void fitText(const char *t, int x, int y, int maxW) {
+  char buf[104];
+  fitInto(buf, t, maxW);
   gfx->setCursor(x, y);
+  gfx->print(buf);
+}
+
+// Prints `t` centred on the screen at baseline y, cut short to fit.
+static void centreText(const uint8_t *font, const char *t, int y, uint16_t col) {
+  char buf[104];
+  gfx->setFont(font);
+  gfx->setTextColor(col);
+  fitInto(buf, t, W - 8);
+  gfx->setCursor((W - textWidth(buf)) / 2, y);
   gfx->print(buf);
 }
 
@@ -328,12 +379,12 @@ static void drawTestPattern() {
   gfx->fillScreen(C_BLACK);
   const uint16_t cols[] = {0xF800, 0x07E0, 0x001F, C_WHITE};
   const char *names[] = {"RED", "GREEN", "BLUE", "WHITE"};
-  const int bh = (H - 8) / 4;
+  const int bh = (H - 8) / 4, ts = H > 128 ? 4 : 2;
   for (int i = 0; i < 4; i++) {
     gfx->fillRect(4, 4 + i * bh, W - 8, bh - 4, cols[i]);
-    gfx->setTextSize(4);
+    gfx->setTextSize(ts);
     gfx->setTextColor(i == 3 ? C_BLACK : C_WHITE);
-    gfx->setCursor(20, 14 + i * bh);
+    gfx->setCursor(4 * ts + 4, 4 + i * bh + (bh - 4 - 8 * ts) / 2);
     gfx->print(names[i]);
   }
   gfx->setTextSize(1);
@@ -370,72 +421,115 @@ static void ageText(char *out, size_t n, const Session &s) {
   }
 }
 
-// Bottom of the panel: a dot and a count per state, greyed out at zero.
-static void drawCounts(int x, int y) {
+// A dot and a count per state, greyed out at zero, `step` px apart from x.
+static void drawCounts(int x, int y, int step, int r, const uint8_t *font) {
   int counts[4] = {0, 0, 0, 0};
   for (auto &s : sessions)
     if (s.used) counts[s.st]++;
   static const struct { State st; uint16_t c; } chips[] = {
     {ST_NEEDS, C_NEEDS}, {ST_WORKING, C_WORKING}, {ST_DONE, C_DONE}, {ST_IDLE, C_IDLE}};
   for (int i = 0; i < 4; i++) {
-    int n = counts[chips[i].st], cx = x + i * 56;
-    gfx->fillCircle(cx + 7, y - 7, 7, n ? chips[i].c : mix565(chips[i].c, C_BLACK, 0.7f));
+    int n = counts[chips[i].st], cx = x + i * step;
+    gfx->fillCircle(cx + r, y - r, r, n ? chips[i].c : mix565(chips[i].c, C_BLACK, 0.7f));
     char num[4];
     snprintf(num, sizeof(num), "%d", n);
-    text(u8g2_font_fub14_tr, num, cx + 19, y, n ? C_WHITE : C_DIM);
+    text(font, num, cx + 2 * r + 5, y, n ? C_WHITE : C_DIM);
   }
 }
 
-static void draw() {
-  if (testPattern && millis() - testPattern < 20000) { drawTestPattern(); return; }
-  testPattern = 0;
-  int f = currentFocus();
-  gfx->fillScreen(C_BLACK);
+static const char *const titles[] = {"Idle", "Working", "Your turn", "Needs you"};
 
-  if (setupActive) {
-    drawFace(gfx, MOOD_CURIOUS, FACE_X, FACE_Y, C_NEEDS, 0);
-    text(u8g2_font_fub25_tr, "Setup", PANEL_X, 52, C_NEEDS);
-    text(u8g2_font_fur14_tr, "On your phone, join", PANEL_X, 92, C_DIM);
-    gfx->setFont(u8g2_font_fur17_tr);
-    gfx->setTextColor(C_WHITE);
-    fitText(apName, PANEL_X, 120, PANEL_W);
-    text(u8g2_font_fur14_tr, "then open", PANEL_X, 160, C_DIM);
-    text(u8g2_font_fur17_tr, "192.168.4.1", PANEL_X, 188, C_WHITE);
-    gfx->flush();
-    return;
+static void sessionLabel(char *out, size_t n, const Session &s) {
+  if (s.agent[0]) snprintf(out, n, "%s (%s)", s.project, s.agent);
+  else copyStr(out, n, s.project);
+}
+
+#if COMPACT
+// 128 x 128: a title on top, the eyes in the middle, a line or two below.
+
+static void drawSetup() {
+  centreText(u8g2_font_fub11_tr, "Setup", 16, C_NEEDS);
+  centreText(u8g2_font_fur11_tr, "join Wi-Fi", 44, C_DIM);
+  centreText(u8g2_font_6x12_tr, apName, 62, C_WHITE);
+  centreText(u8g2_font_fur11_tr, "then open", 92, C_DIM);
+  centreText(u8g2_font_6x12_tr, "192.168.4.1", 110, C_WHITE);
+}
+
+static void drawSleeping() {
+  // A slight drift, like the AMOLED's, though an LCD doesn't burn in.
+  uint32_t now = millis();
+  int dx = 3 * sinf(2 * PI * (now % 23000) / 23000);
+  int dy = 2 * sinf(2 * PI * (now % 31000) / 31000);
+  centreText(u8g2_font_fub11_tr, "Sleeping", 16 + dy, C_IDLE);
+  drawFace(gfx, MOOD_SLEEPY, FACE_X + dx, FACE_Y + dy, C_IDLE, 0, FACE_SIZE);
+  if (WiFi.status() == WL_CONNECTED) {
+    centreText(u8g2_font_fur11_tr, "no sessions", 104 + dy, C_DIM);
+    centreText(u8g2_font_6x12_tr, WiFi.localIP().toString().c_str(), 122 + dy, C_DIM);
+  } else {
+    centreText(u8g2_font_fur11_tr, cfg.ssid[0] ? "wifi..." : "no wifi config", 104 + dy, C_DIM);
+    centreText(u8g2_font_6x12_tr, "serial ok", 122 + dy, C_DIM);
   }
+}
 
-  if (f < 0) {
-    // Nothing going on: the face sleeps. Everything drifts a little so the
-    // AMOLED doesn't burn in.
-    uint32_t now = millis();
-    int dx = 12 * sinf(2 * PI * (now % 23000) / 23000);
-    int dy = 8 * sinf(2 * PI * (now % 31000) / 31000);
-    drawFace(gfx, MOOD_SLEEPY, FACE_X + dx, FACE_Y + dy, C_IDLE, 0);
-    text(u8g2_font_fub25_tr, "Sleeping", PANEL_X + dx, 72 + dy, C_IDLE);
-    if (WiFi.status() == WL_CONNECTED) {
-      text(u8g2_font_fur17_tr, "no sessions", PANEL_X + dx, 110 + dy, C_DIM);
-      text(u8g2_font_fur14_tr, WiFi.localIP().toString().c_str(), PANEL_X + dx, 184 + dy, C_DIM);
-    } else {
-      text(u8g2_font_fur17_tr, cfg.ssid[0] ? "wifi..." : "no wifi config", PANEL_X + dx, 110 + dy, C_DIM);
-      text(u8g2_font_fur14_tr, "serial ok", PANEL_X + dx, 184 + dy, C_DIM);
-    }
-    gfx->flush();
-    return;
-  }
-
-  const Session &s = sessions[f];
+// No room for the message: the title and the eyes say "needs you".
+static void drawSession(const Session &s, float pop) {
   uint16_t col = colourOf(s);
-  uint32_t sinceChange = millis() - s.changed;
-  float pop = sinceChange < POP_MS ? 1 - (float)sinceChange / POP_MS : 0;
-  drawFace(gfx, moodOf(s), FACE_X, FACE_Y, col, pop);
+  centreText(u8g2_font_fub11_tr, titles[s.st], 16, col);
+  drawFace(gfx, moodOf(s), FACE_X, FACE_Y, col, pop, FACE_SIZE);
+  char label[40];
+  sessionLabel(label, sizeof(label), s);
+  centreText(u8g2_font_fur11_tr, label, 104, C_WHITE);
+  drawCounts(4, 125, 32, 4, u8g2_font_6x12_tr);
+}
 
-  static const char *titles[] = {"Idle", "Working", "Your turn", "Needs you"};
+static void drawUpdating(int pct) {
+  gfx->fillScreen(C_BLACK);
+  centreText(u8g2_font_fub11_tr, "Updating", 16, C_WORKING);
+  drawFace(gfx, MOOD_FOCUSED, FACE_X, FACE_Y, C_WORKING, 0, FACE_SIZE);
+  char t[16];
+  snprintf(t, sizeof(t), "%d%%", pct);
+  centreText(u8g2_font_fur11_tr, t, 110, C_WHITE);
+  gfx->flush();
+}
+
+#else
+// 536 x 240: the eyes on the left, a text panel on the right.
+
+static void drawSetup() {
+  drawFace(gfx, MOOD_CURIOUS, FACE_X, FACE_Y, C_NEEDS, 0);
+  text(u8g2_font_fub25_tr, "Setup", PANEL_X, 52, C_NEEDS);
+  text(u8g2_font_fur14_tr, "On your phone, join", PANEL_X, 92, C_DIM);
+  gfx->setFont(u8g2_font_fur17_tr);
+  gfx->setTextColor(C_WHITE);
+  fitText(apName, PANEL_X, 120, PANEL_W);
+  text(u8g2_font_fur14_tr, "then open", PANEL_X, 160, C_DIM);
+  text(u8g2_font_fur17_tr, "192.168.4.1", PANEL_X, 188, C_WHITE);
+}
+
+static void drawSleeping() {
+  // Nothing going on: the face sleeps. Everything drifts a little so the
+  // AMOLED doesn't burn in.
+  uint32_t now = millis();
+  int dx = 12 * sinf(2 * PI * (now % 23000) / 23000);
+  int dy = 8 * sinf(2 * PI * (now % 31000) / 31000);
+  drawFace(gfx, MOOD_SLEEPY, FACE_X + dx, FACE_Y + dy, C_IDLE, 0);
+  text(u8g2_font_fub25_tr, "Sleeping", PANEL_X + dx, 72 + dy, C_IDLE);
+  if (WiFi.status() == WL_CONNECTED) {
+    text(u8g2_font_fur17_tr, "no sessions", PANEL_X + dx, 110 + dy, C_DIM);
+    text(u8g2_font_fur14_tr, WiFi.localIP().toString().c_str(), PANEL_X + dx, 184 + dy, C_DIM);
+  } else {
+    text(u8g2_font_fur17_tr, cfg.ssid[0] ? "wifi..." : "no wifi config", PANEL_X + dx, 110 + dy, C_DIM);
+    text(u8g2_font_fur14_tr, "serial ok", PANEL_X + dx, 184 + dy, C_DIM);
+  }
+}
+
+static void drawSession(const Session &s, float pop) {
+  uint16_t col = colourOf(s);
+  drawFace(gfx, moodOf(s), FACE_X, FACE_Y, col, pop);
   text(u8g2_font_fub25_tr, titles[s.st], PANEL_X, 44, col);
 
   char label[40];
-  if (s.agent[0]) snprintf(label, sizeof(label), "%s (%s)", s.project, s.agent);
-  else copyStr(label, sizeof(label), s.project);
+  sessionLabel(label, sizeof(label), s);
   gfx->setFont(u8g2_font_fur17_tr);
   gfx->setTextColor(C_WHITE);
   fitText(label, PANEL_X, 80, PANEL_W);
@@ -450,7 +544,35 @@ static void draw() {
     wrapText(s.msg, PANEL_X, 136, PANEL_W, 22, 3);
   }
 
-  drawCounts(PANEL_X, 224);
+  drawCounts(PANEL_X, 224, 56, 7, u8g2_font_fub14_tr);
+}
+
+static void drawUpdating(int pct) {
+  gfx->fillScreen(C_BLACK);
+  drawFace(gfx, MOOD_FOCUSED, FACE_X, FACE_Y, C_WORKING, 0);
+  text(u8g2_font_fub25_tr, "Updating", PANEL_X, 72, C_WORKING);
+  char t[16];
+  snprintf(t, sizeof(t), "%d%%", pct);
+  text(u8g2_font_fur17_tr, t, PANEL_X, 110, C_WHITE);
+  text(u8g2_font_fur14_tr, "keep it powered", PANEL_X, 184, C_DIM);
+  gfx->flush();
+}
+
+#endif
+
+static void draw() {
+  if (testPattern && millis() - testPattern < 20000) { drawTestPattern(); return; }
+  testPattern = 0;
+  int f = currentFocus();
+  gfx->fillScreen(C_BLACK);
+  if (setupActive) {
+    drawSetup();
+  } else if (f < 0) {
+    drawSleeping();
+  } else {
+    uint32_t sinceChange = millis() - sessions[f].changed;
+    drawSession(sessions[f], sinceChange < POP_MS ? 1 - (float)sinceChange / POP_MS : 0);
+  }
   gfx->flush();
 }
 
@@ -491,17 +613,6 @@ static void sendStateJson(Print &out) {
 // ---------------------------------------------------------------- update
 
 static const char *updatePassword() { return cfg.updatePass; }
-
-static void drawUpdating(int pct) {
-  gfx->fillScreen(C_BLACK);
-  drawFace(gfx, MOOD_FOCUSED, FACE_X, FACE_Y, C_WORKING, 0);
-  text(u8g2_font_fub25_tr, "Updating", PANEL_X, 72, C_WORKING);
-  char t[16];
-  snprintf(t, sizeof(t), "%d%%", pct);
-  text(u8g2_font_fur17_tr, t, PANEL_X, 110, C_WHITE);
-  text(u8g2_font_fur14_tr, "keep it powered", PANEL_X, 184, C_DIM);
-  gfx->flush();
-}
 
 static void httpStatus(WiFiClient &c, const char *status, const char *body) {
   c.printf("HTTP/1.1 %s\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: %u\r\n\r\n%s",
@@ -856,7 +967,7 @@ void setup() {
   pinMode(PIN_BTN_L, INPUT_PULLUP);
   pinMode(PIN_BTN_R, INPUT_PULLUP);
   pinMode(PIN_LCD_EN, OUTPUT);
-  digitalWrite(PIN_LCD_EN, HIGH);
+  digitalWrite(PIN_LCD_EN, LCD_EN_ON);
   if (!gfx->begin()) Serial.println("display init failed (frame buffer alloc?)");
   gfx->setTextWrap(false);
   Serial.printf("psram %u free\n", ESP.getFreePsram());
