@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
 ### Added
 
 - **LilyGO T-QT Pro support.** The same firmware builds for the T-QT Pro's 128x128 screen (`pio run -e tqt-pro`), with the state on top, the eyes in the middle and the project and session counts below. The message doesn't fit, so a session that needs you shows the curious eyes and the title only. Releases include T-QT Pro images.
@@ -68,7 +70,8 @@ First release: a desk status light that shows when an AI coding agent needs you.
 - **Hook installer** (`hooks/install.py`) for Claude Code, Cursor and Codex on Windows, macOS and Linux, Python 3.8+ with the standard library only. It runs without a clone (`curl … | python3 -` or `irm … | python -`), keeps existing hooks, replaces earlier Claude Needs You hooks, backs up each changed file, and supports `--agents`, `--dry-run` and `--uninstall`. Run from a virtualenv, it points the hooks at the system Python.
 - **Relay** (`hooks/relay.py`) that converts each agent's hook payload to the board's format with a one-second timeout and always exits 0, so agents carry on when the board is off.
 
-[Unreleased]: https://github.com/AncientiCe/agent-needs-you/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/AncientiCe/agent-needs-you/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/AncientiCe/agent-needs-you/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/AncientiCe/agent-needs-you/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/AncientiCe/agent-needs-you/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AncientiCe/agent-needs-you/compare/v0.2.0...v0.3.0

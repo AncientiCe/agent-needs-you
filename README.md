@@ -41,7 +41,7 @@ A board without Wi-Fi settings starts in setup and shows how to connect:
 2. The setup page usually opens by itself; if not, go to `http://192.168.4.1`.
 3. Pick your network and enter its password. Optionally give the board a fixed IP (the router address and subnet mask default to the usual `x.x.x.1` and `255.255.255.0`; change them under *Router settings* if your network differs) and an update password for updating over Wi-Fi. Save.
 
-The board restarts, joins your network and shows its IP on the idle screen. Use that IP for the hooks below. A static IP, or an address reserved for the board in your router, keeps the hooks pointing at the right place.
+The board restarts, joins your network and shows its IP on the idle screen. Use that IP for the hooks below. A static IP, or an address reserved for the board in your router, keeps the hooks pointing at the right place. With several boards, set each one up this way with its own IP and give the hooks all of them.
 
 To change networks later, hold the right-hand button for five seconds (or send `setup` over serial). If the saved network can't be reached within a minute of boot, setup opens by itself. When nobody uses it for ten minutes, the board restarts and tries the saved network again.
 
