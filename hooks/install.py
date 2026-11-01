@@ -4,6 +4,7 @@
     python hooks/install.py --ip 192.168.2.141 --agents claude,cursor
     python hooks/install.py --uninstall
     python hooks/install.py --ip 192.168.2.141 --dry-run  # show, change nothing
+    python hooks/install.py --ip 192.168.2.141,192.168.2.142  # several boards
 
 Without a clone (relay.py is then downloaded from GitHub):
 
@@ -189,10 +190,17 @@ def check_board(url):
         return f"WARNING: board not reachable at {status_url} ({e}); hooks are installed anyway"
 
 
+def board_urls(ips, urls):
+    """Hook URLs from the comma-separated --ip or --url value."""
+    if urls:
+        return [u.strip() for u in urls.split(",") if u.strip()]
+    return [f"http://{ip.strip()}/hook" for ip in (ips or "").split(",") if ip.strip()]
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--ip", help="board IP address, e.g. 192.168.2.141")
-    p.add_argument("--url", help="full hook URL (instead of --ip)")
+    p.add_argument("--ip", help="board IP address, e.g. 192.168.2.141; comma-separate several boards")
+    p.add_argument("--url", help="full hook URL (instead of --ip); comma-separate several boards")
     p.add_argument("--agents", help="comma-separated: claude,cursor,codex (default: every one found)")
     p.add_argument("--codex-shell", choices=("powershell", "cmd"), default="powershell",
                    help="Codex session shell on Windows (default: powershell)")
@@ -201,7 +209,8 @@ def main():
     p.add_argument("--home", type=Path, default=Path.home(), help=argparse.SUPPRESS)
     args = p.parse_args()
 
-    url = args.url or (f"http://{args.ip}/hook" if args.ip else None)
+    urls = board_urls(args.ip, args.url)
+    url = ",".join(urls)
     if not url and not args.uninstall:
         p.error("--ip or --url is required (the board shows its IP on the idle screen)")
 
@@ -232,7 +241,8 @@ def main():
         print(f"{name:7} {path}: {apply(path, updater, command, args.dry_run)}")
 
     if not args.uninstall:
-        print(check_board(url))
+        for u in urls:
+            print(check_board(u))
         if "codex" in names:
             print("codex: new hooks must be trusted once; run /hooks in Codex and trust them")
         print("Restart running sessions if they don't pick up the new hooks.")

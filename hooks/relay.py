@@ -5,7 +5,8 @@ Each agent runs this as a hook command with its event JSON on stdin:
     python -S relay.py --agent claude|cursor|codex --url http://<board-ip>/hook
 
 The event is normalised to the board's fields (hook_event_name, session_id,
-cwd, message, agent) and POSTed with a short timeout. The relay prints only
+cwd, message, agent) and POSTed with a short timeout; --url takes several
+comma-separated URLs to drive more than one board. The relay prints only
 what the agent expects from a hook and always exits 0, so a board that is
 off or unreachable never blocks or fails the agent.
 
@@ -191,11 +192,31 @@ def post(url, body, timeout):
         s.recv(64)
 
 
+def post_all(urls, body, timeout):
+    """POST to every board at once, so one that is off holds up none of the others."""
+    if len(urls) == 1:
+        post(urls[0], body, timeout)
+        return
+    import threading  # only paid for with several boards
+
+    def send(url):
+        try:
+            post(url, body, timeout)
+        except Exception:
+            pass
+
+    threads = [threading.Thread(target=send, args=(u,), daemon=True) for u in urls]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout + 0.5)
+
+
 def main():
     args = dict(zip(sys.argv[1::2], sys.argv[2::2]))
     agent = args.get("--agent", "")
-    url = args.get("--url", "")
-    if agent not in EVENTS or not url:
+    urls = [u.strip() for u in args.get("--url", "").split(",") if u.strip()]
+    if agent not in EVENTS or not urls:
         sys.stderr.write("usage: relay.py --agent claude|cursor|codex --url http://<ip>/hook\n")
         return 0
 
@@ -205,7 +226,7 @@ def main():
         event = data.get("hook_event_name", "")
         body = normalise(agent, data)
         if body:
-            post(url, body, float(args.get("--timeout", 1.0)))
+            post_all(urls, body, float(args.get("--timeout", 1.0)))
     except Exception:
         pass  # never fail the agent's hook
     out = reply(agent, event)

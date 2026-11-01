@@ -1,8 +1,13 @@
-"""Codex question tracking: needs you until the question is answered."""
+"""Codex question tracking: needs you until the question is answered. Posting
+to several boards."""
 
 import json
+import socket
 import tempfile
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -85,6 +90,36 @@ class CodexQuestionTests(unittest.TestCase):
         body = relay.normalise("codex", {"hook_event_name": "PostToolUse", "session_id": "s2",
                                          "tool_name": "Bash"})
         self.assertEqual(body["hook_event_name"], "PostToolUse")
+
+
+class SeveralBoardsTests(unittest.TestCase):
+    def test_board_that_hangs_holds_up_no_other(self):
+        received = []
+
+        class Board(BaseHTTPRequestHandler):
+            def do_POST(self):
+                received.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        live = HTTPServer(("127.0.0.1", 0), Board)
+        threading.Thread(target=live.handle_request, daemon=True).start()
+        self.addCleanup(live.server_close)
+        # Listens but never answers, like a board that has hung.
+        hung = socket.socket()
+        hung.bind(("127.0.0.1", 0))
+        hung.listen(1)
+        self.addCleanup(hung.close)
+
+        urls = [f"http://127.0.0.1:{hung.getsockname()[1]}/hook", f"http://127.0.0.1:{live.server_port}/hook"]
+        body = {"hook_event_name": "Stop", "session_id": "s1", "cwd": "/w/aice"}
+        start = time.monotonic()
+        relay.post_all(urls, body, 0.5)
+        self.assertLess(time.monotonic() - start, 1.5)
+        self.assertEqual(received, [body])
 
 
 if __name__ == "__main__":
