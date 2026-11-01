@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **LilyGO T-QT Pro support.** The same firmware builds for the T-QT Pro's 128x128 screen (`pio run -e tqt-pro`), with the state on top, the eyes in the middle and the project and session counts below. The message doesn't fit, so a session that needs you shows the curious eyes and the title only. Releases include T-QT Pro images.
 - **Several boards at once.** The installer's `--ip`/`--url` and the relay's `--url` take a comma-separated list, and every board gets every event. The relay sends to them in parallel, so a board that is off holds a hook up no longer than with one board.
+- The `wifi` serial command says whether the board's settings were saved in setup or built in from `secrets.h`. With several boards, give each its own address in setup: a `STATIC_IP` in `secrets.h` goes to every board built from it.
 
 ## [0.4.1] - 2026-10-30
 
