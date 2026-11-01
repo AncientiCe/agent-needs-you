@@ -700,11 +700,12 @@ static void handleHttp() {
 }
 
 static uint8_t lastDisconnect = 0;  // why joining the network last failed
+static bool cfgSaved = false;       // network settings came from setup, not secrets.h
 
 static void printWifi() {
-  Serial.printf("network \"%s\" password length %u status %d ip %s rssi %d setup %s last failure %u (%s)\n", cfg.ssid,
+  Serial.printf("network \"%s\" password length %u status %d ip %s rssi %d setup %s last failure %u (%s) settings %s\n", cfg.ssid,
                 (unsigned)strlen(cfg.pass), WiFi.status(), WiFi.localIP().toString().c_str(), WiFi.RSSI(), setupActive ? apName : "off", lastDisconnect,
-                WiFi.disconnectReasonName((wifi_err_reason_t)lastDisconnect));
+                WiFi.disconnectReasonName((wifi_err_reason_t)lastDisconnect), cfgSaved ? "saved" : cfg.ssid[0] ? "built in" : "none");
 }
 
 static void handleSerial() {
@@ -779,6 +780,7 @@ static void loadConfig() {
   Preferences p;
   if (!p.begin("anu", true)) return;  // nothing saved yet
   if (p.isKey("ssid")) {
+    cfgSaved = true;
     p.getString("ssid", cfg.ssid, sizeof(cfg.ssid));
     p.getString("pass", cfg.pass, sizeof(cfg.pass));
     cfg.ip = p.getUInt("ip");

@@ -53,7 +53,7 @@ Needs [PlatformIO](https://platformio.org/).
 pio run -e tdisplay-s3-amoled -t upload   # or -e tqt-pro
 ```
 
-The upload ports in `platformio.ini` are `COM4` (AMOLED) and `COM7` (T-QT Pro); change them for your machine. A board flashed this way starts in setup. To build your settings in instead, copy `include/secrets.h.example` to `include/secrets.h` (gitignored) and fill it in; with both boards, give each its own static IP (the example shows how). Settings saved in setup take priority over `secrets.h`.
+The upload ports in `platformio.ini` are `COM4` (AMOLED) and `COM7` (T-QT Pro); change them for your machine. A board flashed this way starts in setup. To build your settings in instead, copy `include/secrets.h.example` to `include/secrets.h` (gitignored) and fill it in. Settings saved in setup take priority over `secrets.h`. A `STATIC_IP` there goes to every board built from it, so with more than one board, give each its own address in setup (`setup` over serial, or hold the right-hand button) and they keep it through later builds and updates. The `wifi` serial command shows whether a board's settings are `saved` on it or `built in`.
 
 After boot the board prints `wifi up: http://<ip>/` over serial and shows the IP on its idle screen.
 
