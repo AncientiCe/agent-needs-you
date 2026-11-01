@@ -1,7 +1,7 @@
 # Release: when a version tag is pushed, publish a GitHub release whose notes
 # are that version's CHANGELOG.md section, copied verbatim, with the firmware
-# attached: a full image for flashing a new board over USB, and the app image
-# for updating a running board over Wi-Fi. Built without secrets.h, so a new
+# attached for each board: a full image for flashing a new board over USB, and
+# the app image for updating a running board over Wi-Fi. Built without secrets.h, so a new
 # board starts in setup.
 name: Release
 
@@ -44,13 +44,16 @@ jobs:
         run: |
           pip install platformio
           pio run
-          b=.pio/build/tdisplay-s3-amoled
           p=~/.platformio/packages
-          name="agent-needs-you-${GITHUB_REF_NAME}"
-          python "$p/tool-esptoolpy/esptool.py" --chip esp32s3 merge_bin -o "$name-full.bin" \
-            0x0 "$b/bootloader.bin" 0x8000 "$b/partitions.bin" \
-            0xe000 "$p/framework-arduinoespressif32/tools/partitions/boot_app0.bin" 0x10000 "$b/firmware.bin"
-          cp "$b/firmware.bin" "$name-update.bin"
+          # env:image-suffix; the AMOLED keeps the unsuffixed names.
+          for pair in tdisplay-s3-amoled: tqt-pro:-tqt-pro; do
+            b=.pio/build/${pair%%:*}
+            name="agent-needs-you-${GITHUB_REF_NAME}${pair#*:}"
+            python "$p/tool-esptoolpy/esptool.py" --chip esp32s3 merge_bin -o "$name-full.bin" \
+              0x0 "$b/bootloader.bin" 0x8000 "$b/partitions.bin" \
+              0xe000 "$p/framework-arduinoespressif32/tools/partitions/boot_app0.bin" 0x10000 "$b/firmware.bin"
+            cp "$b/firmware.bin" "$name-update.bin"
+          done
 
       - name: Publish release
         env:

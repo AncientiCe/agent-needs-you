@@ -1,6 +1,6 @@
 # Agent Needs You
 
-A desk status light for AI coding agents: [Claude Code](https://claude.com/claude-code), Cursor and Codex. A LilyGO T-Display S3 AMOLED shows whether any session is working, finished, or blocked waiting on you, so a permission prompt never sits unnoticed in a background window.
+A desk status light for AI coding agents: [Claude Code](https://claude.com/claude-code), Cursor and Codex. A LilyGO T-Display S3 AMOLED (or the tiny T-QT Pro) shows whether any session is working, finished, or blocked waiting on you, so a permission prompt never sits unnoticed in a background window.
 
 <p align="center"><img src="docs/states.gif" alt="The board cycling through its states: asleep, working, needs you and your turn" width="480"></p>
 
@@ -24,7 +24,14 @@ The screen rotates through the sessions, most urgent first (needs you > working 
 
 ## Hardware
 
-LilyGO T-Display S3 AMOLED (ESP32-S3R8, 16 MB flash, 8 MB PSRAM, RM67162 240x536 over QSPI). Powered over USB.
+Either board, powered over USB:
+
+| Board | PlatformIO env | Screen |
+|---|---|---|
+| LilyGO T-Display S3 AMOLED (ESP32-S3R8, 16 MB flash, 8 MB PSRAM) | `tdisplay-s3-amoled` | RM67162 536x240 AMOLED: eyes on the left, details beside them |
+| LilyGO T-QT Pro (ESP32-S3 N4R2, 4 MB flash, 2 MB PSRAM) | `tqt-pro` | GC9107 128x128 LCD: state, eyes, project and counts stacked; no room for the message |
+
+The buttons work the same on both: the T-QT Pro's left button is BOOT, the right one cycles.
 
 ## Setting up a board
 
@@ -43,14 +50,14 @@ To change networks later, hold the right-hand button for five seconds (or send `
 Needs [PlatformIO](https://platformio.org/).
 
 ```bash
-pio run -t upload
+pio run -e tdisplay-s3-amoled -t upload   # or -e tqt-pro
 ```
 
-The upload port in `platformio.ini` is `COM4`; change it for your machine. A board flashed this way starts in setup. To build your settings in instead, copy `include/secrets.h.example` to `include/secrets.h` (gitignored) and fill it in. Settings saved in setup take priority over `secrets.h`.
+The upload ports in `platformio.ini` are `COM4` (AMOLED) and `COM7` (T-QT Pro); change them for your machine. A board flashed this way starts in setup. To build your settings in instead, copy `include/secrets.h.example` to `include/secrets.h` (gitignored) and fill it in; with both boards, give each its own static IP (the example shows how). Settings saved in setup take priority over `secrets.h`.
 
 After boot the board prints `wifi up: http://<ip>/` over serial and shows the IP on its idle screen.
 
-Each [release](https://github.com/AncientiCe/agent-needs-you/releases) has two firmware images: `*-full.bin` for a new board (flash it at offset `0x0`, e.g. `esptool.py --chip esp32s3 write_flash 0x0 agent-needs-you-<version>-full.bin`) and `*-update.bin` for updating over Wi-Fi.
+Each [release](https://github.com/AncientiCe/agent-needs-you/releases) has two firmware images per board: `*-full.bin` for a new board (flash it at offset `0x0`, e.g. `esptool.py --chip esp32s3 write_flash 0x0 agent-needs-you-<version>-full.bin`) and `*-update.bin` for updating over Wi-Fi. The T-QT Pro's images are named `agent-needs-you-<version>-tqt-pro-*.bin`.
 
 ## Updating over Wi-Fi
 
@@ -59,7 +66,7 @@ Once a board runs firmware with update support and has an update password (set i
 From a clone:
 
 ```bash
-ANU_HOST=<device-ip> ANU_UPDATE_PASSWORD=<password> pio run -e ota -t upload
+ANU_HOST=<device-ip> ANU_UPDATE_PASSWORD=<password> pio run -e ota -t upload   # T-QT Pro: -e tqt-pro-ota
 ```
 
 Or with a release image and plain curl:
@@ -88,7 +95,7 @@ From a clone, run `python hooks/install.py --ip <device-ip>` instead (`python3` 
 
 Hooks call the Python that ran the installer (or the system Python, if run from a virtualenv), so install with the interpreter you want the hooks to use.
 
-Options: `--agents claude,cursor,codex` to pick agents, `--dry-run` to see what would change, `--uninstall` to remove the hooks. Run it on each computer whose agents should report to the board.
+Options: `--agents claude,cursor,codex` to pick agents, `--dry-run` to see what would change, `--uninstall` to remove the hooks. Run it on each computer whose agents should report to the board. For several boards, list them all: `--ip 192.168.2.141,192.168.2.142`. Every board gets every event, sent in parallel.
 
 On Windows, Codex runs hooks in its session shell. The installer generates PowerShell commands by default; use `--codex-shell cmd` if your Codex session uses Command Prompt. Reinstalling replaces older commands that fail to launch in PowerShell; review and trust the changed Codex hooks afterward.
 
