@@ -54,5 +54,30 @@ class HookCommandTests(unittest.TestCase):
             })
 
 
+class UninstallTests(unittest.TestCase):
+    def run_install(self, home, *args):
+        argv = ["install.py", "--home", str(home), *args]
+        with patch.object(install.sys, "argv", argv), patch("builtins.print"):
+            install.main()
+
+    def test_partial_uninstall_keeps_relay_for_other_agents(self):
+        with tempfile.TemporaryDirectory() as home:
+            home = Path(home)
+            relay = home / ".claude-light" / "relay.py"
+            self.run_install(home, "--agents", "claude,cursor,codex", "--ip", "127.0.0.1")
+            self.run_install(home, "--agents", "claude", "--uninstall")
+            self.assertTrue(relay.exists())
+            self.assertNotIn("relay.py", (home / ".claude" / "settings.json").read_text())
+            self.run_install(home, "--agents", "cursor,codex", "--uninstall")
+            self.assertFalse(relay.exists())
+
+    def test_full_uninstall_removes_relay(self):
+        with tempfile.TemporaryDirectory() as home:
+            home = Path(home)
+            self.run_install(home, "--agents", "claude,cursor,codex", "--ip", "127.0.0.1")
+            self.run_install(home, "--agents", "claude,cursor,codex", "--uninstall")
+            self.assertFalse((home / ".claude-light" / "relay.py").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

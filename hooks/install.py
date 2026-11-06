@@ -148,6 +148,24 @@ AGENTS = {
 
 # ---------------------------------------------------------------- main
 
+def relay_in_use(home):
+    """True when any agent's config still runs our relay (or can't be read)."""
+    for dirname, filename, _ in AGENTS.values():
+        path = home / dirname / filename
+        if not path.exists():
+            continue
+        try:
+            hooks = json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
+            for entries in hooks.values():
+                for e in entries:
+                    commands = [e.get("command", "")] + [h.get("command", "") for h in e.get("hooks", [])]
+                    if any(is_ours(c) for c in commands):
+                        return True
+        except Exception:
+            return True  # unreadable: keep the relay rather than break hooks we can't see
+    return False
+
+
 def apply(path, updater, command, dry_run):
     before = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     after = json.loads(json.dumps(before))
@@ -225,10 +243,7 @@ def main():
         p.error("no agents found; pass --agents")
 
     relay = args.home / ".claude-light" / "relay.py"
-    if args.uninstall:
-        if relay.exists() and not args.dry_run:
-            relay.unlink()
-    else:
+    if not args.uninstall:
         src = relay_source()  # fetch before touching any config
         if not args.dry_run:
             relay.parent.mkdir(exist_ok=True)
@@ -239,6 +254,13 @@ def main():
         path = args.home / dirname / filename
         command = None if args.uninstall else hook_command(relay, name, url, args.codex_shell)
         print(f"{name:7} {path}: {apply(path, updater, command, args.dry_run)}")
+
+    # Every agent's hooks run the same relay: only remove it once none of them does.
+    if args.uninstall and relay.exists() and not args.dry_run:
+        if relay_in_use(args.home):
+            print(f"kept    {relay}: other agents' hooks still use it")
+        else:
+            relay.unlink()
 
     if not args.uninstall:
         for u in urls:
